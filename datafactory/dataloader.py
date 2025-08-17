@@ -80,9 +80,9 @@ def loader_provider(args, period):
     if args.mix_train:
         Data_name = data_dict[args.dataset_name]
         if args.dataset_name in ['ETTh1', 'ETTm1','traffic', 'airquality', 'exchangerate', 'weather', 'electricity', 'nationalillness', 'weather']:
-            dataset1 = T2SDataset(name=Data_name + '_24', data_root=f'./Data/our/', period=period)
-            dataset2 = T2SDataset(name=Data_name + '_48', data_root=f'./Data/our/', period=period)
-            dataset3 = T2SDataset(name=Data_name + '_96', data_root=f'./Data/our/', period=period)
+            dataset1 = T2SDataset(name=Data_name + '_24', data_root=f'./Data/TSFragment-600K/', period=period)
+            dataset2 = T2SDataset(name=Data_name + '_48', data_root=f'./Data/TSFragment-600K/', period=period)
+            dataset3 = T2SDataset(name=Data_name + '_96', data_root=f'./Data/TSFragment-600K/', period=period)
             dataset = AlternatingDataset(dataset1, dataset2, dataset3)
         else:
             if args.dataset_name == 'SUSHI':

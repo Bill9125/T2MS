@@ -37,7 +37,7 @@ def infer(args):
     print('dataset length:', len(dataloader))
     model_root_path = args.dataset_name.split('_')[0]
     pretrained_model = torch.load(f'results/saved_pretrained_models/dataset{model_root_path}_epoch2000/final_model.pth',
-        map_location=torch.device(device))
+        map_location=torch.device(device), weights_only=False)
     pretrained_model.float().to(device).eval()
     model = {'DiT': Transformer, 'MLP': MLP}.get(args.denoiser)
     if model:
@@ -137,15 +137,16 @@ if __name__ == '__main__':
     # for inference
     parser.add_argument('--checkpoint_id', type=int, default=19999,help='model id')
     parser.add_argument('--dataset_name', type=str, default='exchangerate_24', help='dataset name')
-    parser.add_argument('--run_multi', type=bool, default=True, help='run multi times for CRPS,MAP,MRR,NDCG')
+    parser.add_argument('--run_multi', type=bool, default=False, help='run multi times for CRPS,MAP,MRR,NDCG')
     args = parser.parse_args()
     args.mix_train = False
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model_root_path = args.dataset_name.split('_')[0]
     args.checkpoint_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}'.format(args.backbone, args.denoiser, model_root_path), 'model_{}.pth'.format(args.checkpoint_id))
     args.generation_save_path = os.path.join(args.save_path, 'generation', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name,args.cfg_scale,args.total_step))
-
+    # args.run_multi = False
     if args.run_multi:
+        print('start generate', args.run_multi)
         # single
         args.generation_save_path_result = os.path.join(args.generation_save_path)
         x_1, x_t, x_t_latent_dec_array, x_t_latent_enc_array, x_infer_list = infer(args)
@@ -153,14 +154,26 @@ if __name__ == '__main__':
             # multi
             args.generation_save_path_result = os.path.join(args.generation_save_path, f'run_{run_index}')
             x_1, x_t, x_t_latent_dec_array, x_t_latent_enc_array, x_infer_list = infer(args)
+            for i in range(10):
+                fig_path = os.path.join(args.generation_save_path, f'fig_{i}.jpg')
+                plt.clf()
+                plt.plot(x_1[i], label="ground truth")
+                plt.plot(x_t[i], label="generated")
+                plt.legend()
+                plt.savefig(fig_path)
+                # plt.show()
     else:
+        print('start generate', args.run_multi)
         args.generation_save_path_result = os.path.join(args.generation_save_path)
         x_1, x_t, x_t_latent_dec_array, x_t_latent_enc_array, x_infer_list = infer(args)
         for i in range(10):
+            fig_path = os.path.join(args.generation_save_path, f'fig_{i}.jpg')
+            plt.clf()
             plt.plot(x_1[i], label="ground truth")
             plt.plot(x_t[i], label="generated")
             plt.legend()
-            plt.show()
+            plt.savefig(fig_path)
+            # plt.show()
 
         fig = plt.figure()
         ax = fig.add_subplot(1, 1, 1)
@@ -176,12 +189,10 @@ if __name__ == '__main__':
 
 
         def update(frame):
-            if frame >= 100:
-                line.set_ydata(x_infer_list[-2])
-            else:
-                line.set_ydata(x_infer_list[frame])
+            idx = frame if frame < len(x_infer_list) else len(x_infer_list) - 1
+            line.set_ydata(x_infer_list[idx])
             return line, fixed_line
 
 
         ani = FuncAnimation(fig, update, init_func=init, frames=150, interval=500, blit=True)
-        ani.save(f"animation_{args.backbone}.gif", fps=25, writer="imagemagick")
+        ani.save(f"animation_{args.backbone}.gif", fps=15, writer="imagemagick")

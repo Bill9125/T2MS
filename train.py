@@ -19,7 +19,7 @@ def train(args):
     else:
         raise ValueError(f"No denoiser found")
 
-    pretrained_model = torch.load(args.pretrained_model_path, map_location=torch.device(args.device))
+    pretrained_model = torch.load(args.pretrained_model_path, map_location=torch.device(args.device), weights_only=False)
     pretrained_model.float().to(args.device)
     backbone = {'flowmatching': RectifiedFlow(), 'ddpm': DDPM(args.total_step, args.device)}.get(args.backbone)
     if backbone:

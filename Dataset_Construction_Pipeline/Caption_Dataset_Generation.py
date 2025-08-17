@@ -5,7 +5,7 @@ import pandas as pd
 import json
 import time
 
-client = openai.OpenAI(api_key='')
+client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 ###########################################################
 #                      settings                           #
 ###########################################################
@@ -17,7 +17,7 @@ sample_length_list = [24, 48, 96]
 dataset_name = dataset_name_list[dataset_name_index]
 dataset_path = f'./{dataset_name}.csv'
 target_column_name = 'OT'
-#
+
 sample_length = sample_length_list[sample_length_index]
 saved_path = f'./{dataset_name}_{sample_length}_folder'
 if not os.path.exists(saved_path):
@@ -50,7 +50,7 @@ def get_completion(user_prompt):
         messages=[
             {"role": "system",
              "content": 
-                "You're an expert in time series summarization, providing insightful and succinct descriptions with precise language. Avoid unnecessary text or explanations."},
+                "You're an expert in multi-feature time series summarization. Generate precise, concise, and context-aware descriptions that reflect the dynamics and relationships among multiple variables. Focus on clarity and informativeness. Avoid unnecessary text or generic explanations."},
             {"role": "user", "content": user_prompt}
         ],
         temperature=0,
@@ -81,13 +81,16 @@ def one_sample_data_summary(data):
         }
         """
     user_prompt = f"""
-        1.Summarize the observed trend in the given time series data.
-        2.ONLY output the summary using the following JSON format.
-        3.The output MUST be less than 256 tokens.
-        4.The output description MUST be consistent with the actual trend characteristics of the time series.
-        Given the time series data
-        ```{formatted_string}```
-        Use the following JSON format:
+        You are given a segment of time series data with multiple features.​
+        Your task:​
+        1. Analyze and summarize the temporal trend and inter-feature dynamics observed in the data.​
+        2. ONLY output your result in the **exact JSON format** shown below.​
+        3. The output MUST be **less than 512 tokens**.​
+        4. Your summary MUST reflect the actual characteristics present in the time series data.​
+        5. DO NOT add any extra explanation, markdown, or commentary.​
+        Time series data:​
+        ```{formatted_string}```​
+        Expected JSON output format:​
         ```{formatted_json}```
         """
 

@@ -2,6 +2,7 @@ import os
 import datetime
 import numpy as np
 import matplotlib.pyplot as plt
+from Dataset_Construction_Pipeline.Evaluate_Datasets import cosine_similarity
 from scipy.linalg import sqrtm
 from dtaidistance.dtw_ndim import distance as multi_dtw_distance
 from evaluate.ts2vec import initialize_ts2vec
