@@ -1,48 +1,13 @@
-import os
-import openai
-from matplotlib import pyplot as plt
-import pandas as pd
+import argparse
 import json
+import openai
 import time
-
-client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-###########################################################
-#                      settings                           #
-###########################################################
-dataset_name_index = 0
-sample_length_index = 0
-
-dataset_name_list = ['ETTh1', 'ETTm1', 'electricity', 'exchange_rate', 'traffic', 'air-quality']
-sample_length_list = [24, 48, 96]
-dataset_name = dataset_name_list[dataset_name_index]
-dataset_path = f'./{dataset_name}.csv'
-target_column_name = 'OT'
-
-sample_length = sample_length_list[sample_length_index]
-saved_path = f'./{dataset_name}_{sample_length}_folder'
-if not os.path.exists(saved_path):
-    os.makedirs(saved_path)
-    print(f"Path '{saved_path}' created.")
-else:
-    print(f"Path '{saved_path}' already exists.")
-data = pd.read_csv(dataset_path)
-csv_data_file_total_length = len(data)
-Max_Iteration = csv_data_file_total_length - sample_length
-data = data[target_column_name]
-data.index = pd.to_datetime(data.index)
-list_time_data = data.to_list()
-
-dataset = []
-for i in range(Max_Iteration):
-    sample = list_time_data[i: i + sample_length]
-    dataset.append(sample)
-print(len(dataset))
-print(len(dataset[0]))
-
-
-###########################################################
-#                      function                           #
-###########################################################
+import tiktoken
+from matplotlib import pyplot as plt
+import os.path as path
+import os
+import re
+import textwrap
 
 def get_completion(user_prompt):
     completion = client.chat.completions.create(
@@ -57,113 +22,98 @@ def get_completion(user_prompt):
     )
     return completion.choices[0].message.content
 
-
-
-
-def plot_data_to_picture(data, text, sample_num):
-    fig, ax = plt.subplots()
-    ax.plot(data)
-    fig.text(0.5, 0.05, text, ha='center', va='center', fontsize=12, bbox=dict(facecolor='lightblue', alpha=0.5))
-    plt.tight_layout()
-    # if not picture file create
-    directory = os.path.join(saved_path, 'picture')
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-    plt.savefig(saved_path + '/picture/data_sample_{}.png'.format(sample_num), bbox_inches='tight')
-
-
 def one_sample_data_summary(data):
-    formatted_data = [f"{i + 1}.0, {value:.3f}" for i, value in enumerate(data)]
-    formatted_string = "\n".join(formatted_data)
     formatted_json = """
         {
             "Trend Analysis": "..."
         }
         """
     user_prompt = f"""
-        You are given a segment of time series data with multiple features.​
-        Your task:​
-        1. Analyze and summarize the temporal trend and inter-feature dynamics observed in the data.​
-        2. ONLY output your result in the **exact JSON format** shown below.​
-        3. The output MUST be **less than 512 tokens**.​
-        4. Your summary MUST reflect the actual characteristics present in the time series data.​
-        5. DO NOT add any extra explanation, markdown, or commentary.​
-        Time series data:​
-        ```{formatted_string}```​
-        Expected JSON output format:​
+        You are given a segment of multi-feature time series data.
+        Your task:
+        1. Analyze and summarize the temporal trends and the relationships among features.
+        2. ONLY output your result in the exact JSON format shown below.
+        3. The value of "Trend Analysis" MUST be a single descriptive string that integrates all features into one coherent narrative.
+        4. DO NOT output per-feature dictionaries, nested structures, or numeric key-value pairs.
+        5. The output MUST be less than 512 tokens.
+        6. The description MUST be consistent with the actual trends present in the data.
+        7. DO NOT add extra explanations, markdown, or commentary.
+        Given the multi-feature time series data
+        ```{data}```​
+        Use the following JSON format:
         ```{formatted_json}```
         """
 
     start_time = time.time()
     one_sample_completion = get_completion(user_prompt)
     end_time = time.time()
-    # print(one_sample_completion)
+    raw_output = one_sample_completion.strip()
+    # 移除 ```json 或 ``` 包裹
+    cleaned = re.sub(r"^```(json)?|```$", "", raw_output, flags=re.MULTILINE).strip()
+    parsed = json.loads(cleaned)
+    print(parsed)
     print(f"Time taken: {end_time - start_time:.2f} seconds")
-    # encoding = tiktoken.encoding_for_model("gpt-4o")
-    # print(f"Token count: {len(encoding.encode(user_prompt))}")
-    return one_sample_completion
+    encoding = tiktoken.encoding_for_model("gpt-4o")
+    print(f"Token count: {len(encoding.encode(user_prompt))}")
+    return parsed
 
+def plot_data_to_picture(features, text, save_path):
+    for feature_name, feature in features.items():
+        plt.plot(feature, label=feature_name)  # 每條線自動不同顏色
+        
+    # 自動換行：每 60 字符換一行
+    wrapped_text = textwrap.fill(text['Trend Analysis'], width=60)
+    plt.title(wrapped_text, fontsize=10, loc='center')
+    plt.xlabel("Frame")
+    plt.ylabel("Value")
+    plt.legend()
+    plt.grid(True)
 
-def save_data_to_json(sample, one_sample_completion, sample_num, itr_num):
-    output_data = one_sample_completion
-    start = output_data.find("`json") + 5
-    end = output_data.find("`", start)
-    json_string = output_data[start:end].strip()
-    json_string_copy = json_string
-    data = json.loads(json_string)
-    # add new key
-    data["sampled_time_series"] = sample
-    # if not json_data file create
-    directory = os.path.join(saved_path, 'json_data')
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-    with open(saved_path + '/json_data/data_sample_{}_{}.json'.format(sample_num, itr_num), 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False)
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.close()
 
-
-###########################################################
-#                         run                             #
-###########################################################
-
-max_retries = 3  # Set the maximum number of retries
-start_index = 17000  # Start processing From xxx
-progress_file = f'progress_{dataset_name}_{sample_length}.txt'
-if os.path.exists(progress_file):
-    with open(progress_file, 'r') as file:
-        start_index = int(file.read().strip())
-for i, sample in enumerate(dataset):
-    if i < start_index:
-        continue
-    if i == len(dataset) - sample_length:
-        break
-
-    retries = 0
-    while retries < max_retries:
-        try:
-            print('current_sample_is: {}'.format(i + 1))
-            one_sample_text = one_sample_data_summary(sample)
-            save_data_to_json(sample, one_sample_text, i + 1, 1)
-            # one_sample_text = one_sample_data_summary(sample)
-            # save_data_to_json(sample, one_sample_text, i + 1, 2)
-            # one_sample_text = one_sample_data_summary(sample)
-            # save_data_to_json(sample, one_sample_text, i + 1, 3)
-            # one_sample_text = one_sample_data_summary(sample)
-            # save_data_to_json(sample, one_sample_text, i + 1, 4)
-            # one_sample_text = one_sample_data_summary(sample)
-            # save_data_to_json(sample, one_sample_text, i + 1, 5)
-
-            # plot_data_to_picture(sample, one_sample_text, i+1)
-
-            with open(progress_file, 'w') as file:
-                file.write(str(i + 1))
-
-            break
-        except Exception as e:
-            print(f"Error occurred: {e}. Retrying {retries + 1}/{max_retries}...")
-            retries += 1
-
-    if retries == max_retries:
-        error_message = f"Failed to process sample {i + 1} after {max_retries} retries."
-        with open(f'error_log.txt_{dataset_name}_{sample_length}', 'a') as file:
-            file.write(error_message + "\n")
-
+if __name__ == "__main__":
+    paser = argparse.ArgumentParser()
+    paser.add_argument('--data_path', type=str, default='./Data/benchpress/data.json')
+    paser.add_argument('--output_path', type=str, default='./Data/benchpress/Caped_data.json')
+    paser.add_argument('--max_retries', type=int, default=3)
+    args = paser.parse_args()
+    client = openai.OpenAI(api_key='')
+    
+    with open(args.data_path, 'r') as f:
+        data = json.load(f)
+    
+    for subject, clips in data.items():
+        for clip, features in clips.items():
+            if clip == 'label':
+                continue
+            string = ""
+            retries = 0
+            for feature_name, feature in features.items(): # data in every clip
+                string += f"{feature_name} : {list(feature)}\n"
+            
+            while retries < args.max_retries:
+                try:
+                    print(f'current sample is {subject} on {clip}')
+                    one_sample_text = one_sample_data_summary(string)
+                    save_dir = path.join(path.dirname(args.output_path), clips['label'], subject, clip)
+                    print(save_dir)
+                    if not path.exists(save_dir):
+                        os.makedirs(save_dir)
+                    txt_path = path.join(save_dir, 'caption.json')
+                    with open(txt_path, 'w', encoding="utf-8") as f:
+                        json.dump(one_sample_text, f, indent=4)
+                    fig_path = path.join(save_dir, 'fig.jpg')
+                    plot_data_to_picture(features, one_sample_text, fig_path)
+                    break
+                
+                except Exception as e:
+                    print(f"Error occurred: {e}. Retrying {retries + 1}/{args.max_retries}...")
+                    retries += 1
+                
+            if retries == args.max_retries:
+                error_message = f"Failed to process sample {subject} on {clip} after {args.max_retries} retries."
+                with open(f'error_log.txt', 'a') as file:
+                    file.write(error_message + "\n")
+                    

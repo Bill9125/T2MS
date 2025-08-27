@@ -4,6 +4,20 @@ import os.path as path
 import numpy as np
 import os, re, glob, json, ast
 
+feature = {'feature_0': 'bar_x', 'feature_1': 'bar_y', 'feature_2': 'barx/bar_y', 'feature_3': 'left_shoulder_y',
+           'feature_4': 'right_shoulder_y', 'feature_5 ': 'left_dist', 'feature_6': 'right_dist', 'feature_7': 'left_elbow',
+           'feature_8': 'left_shoulder', 'feature_9': 'right_elbow', 'feature_10': 'right_shoulder', 'feature_11': 'left_torso-arm',
+           'feature_12': 'right_torso-arm'}
+reverse_feature = {v: k for k, v in feature.items()}
+
+def sort_features(d):
+    if isinstance(d, dict):
+        return {k: sort_features(v) for k, v in sorted(d.items(), key=lambda x: int(x[0].split("_")[-1]) if "feature_" in x[0] else x[0])}
+    elif isinstance(d, list):
+        return [sort_features(i) for i in d]
+    else:
+        return d
+
 def data_check(lengths, output_root):
     plt.hist(lengths, bins=5)
     plt.xlabel('Length')
@@ -36,14 +50,17 @@ def sort_files(data):
     
     return zipped
 
-def read_angle_txt(clips):
-    all_clip_angle = {}
+def read_angle_txt(clips, all_angle_view_feature, angle_name):
     for clip_path in clips:
         with open(clip_path, 'r') as f:
             lines = f.read().strip().split('\n')
             data = ([float(line.split(',')[1]) for line in lines])
-        all_clip_angle[path.splitext(path.basename(clip_path))[0]] = data
-    return all_clip_angle
+            clip = path.splitext(path.basename(clip_path))[0]
+            
+        if clip not in all_angle_view_feature.keys():
+            all_angle_view_feature[clip] = {}
+        all_angle_view_feature[clip][reverse_feature[angle_name]] = data
+    return all_angle_view_feature
 
 def extract_lateral_view_feature(lines):
     data = np.array([[float(x) for x in line.split(',')[1:3]] for line in lines])
@@ -87,23 +104,35 @@ def extract_top_view_feature(lines):
     all_coords = np.array(all_coords, dtype=float)
     return np.array([process_wrist_to_shoulder_line(all_coords)])[0]
 
-def read_coordinate_feature_txt(clips, view):
-    all_clip_feature = {}
+def read_coordinate_feature_txt(clips, all_angle_view_feature, view):
     for clip_path in clips:
         with open(clip_path, 'r') as f:
             lines = f.read().strip().split('\n')
-            if view == 'lateral_view':
-                clip_data = extract_lateral_view_feature(lines) # [bar_x, bar_y, barx/bar_y]
-                # print('lateral_view', clip_data.shape)
-            elif view == 'rear_view':
-                clip_data = extract_rear_view_feature(lines) # [left_shoulder_y, right_shoulder_y]
-                # print('rear_view', clip_data.shape)
-            elif view == 'top_view':
-                clip_data = extract_top_view_feature(lines) # [left_dist, right_dist]
-                # print('top_view', clip_data.shape)
+            clip = path.splitext(path.basename(clip_path))[0]
+            
+            if clip not in all_angle_view_feature.keys():
+                all_angle_view_feature[clip] = {}
                 
-        all_clip_feature[path.splitext(path.basename(clip_path))[0]] = clip_data.tolist()
-    return all_clip_feature
+            if view == 'lateral_view':
+                data = extract_lateral_view_feature(lines) # [bar_x, bar_y, barx/bar_y]
+                all_angle_view_feature[clip][reverse_feature['bar_x']] = data[:,0].tolist()
+                all_angle_view_feature[clip][reverse_feature['bar_y']] = data[:,1].tolist()
+                all_angle_view_feature[clip][reverse_feature['barx/bar_y']] = data[:,2].tolist()
+                
+            elif view == 'rear_view':
+                data = extract_rear_view_feature(lines) # [left_shoulder_y, right_shoulder_y]
+                all_angle_view_feature[clip][reverse_feature['left_shoulder_y']] = data[:,0].tolist()
+                all_angle_view_feature[clip][reverse_feature['right_shoulder_y']] = data[:,1].tolist()
+                
+            elif view == 'top_view':
+                data = extract_top_view_feature(lines) # [left_dist, right_dist]
+                all_angle_view_feature[clip][reverse_feature['left_dist']] = data[:,0].tolist()
+                all_angle_view_feature[clip][reverse_feature['right_dist']] = data[:,1].tolist()
+                
+            else:
+                raise ValueError(f"Unsupported view: {view}")
+            
+    return all_angle_view_feature
 
 def perpendicular_distance(point, line_start, line_end):
     line_vec = line_end - line_start
@@ -132,41 +161,36 @@ def process_wrist_to_shoulder_line(coords_list):
 def merge_files(class_dir, output_root):
     if not path.exists(output_root):
         os.makedirs(output_root)
-        
+    all_subject_feature = {}
+    
     for dir in class_dir:
         subjects = glob.glob(path.join(dir, '*'))
-        all_subject_feature = {}
         
         for subject in subjects:
             datasets = glob.glob(path.join(subject, '*'))
             all_clip_feature = {}
+            all_angle_view_feature = {}
             
             for dataset in datasets:  # [angle, coordinate, video]
                 if path.basename(dataset) == 'angle_dataset':
-                    all_angle = {'left_elbow': {}, 'left_shoulder': {}, 'right_elbow': {}, 'right_shoulder': {}, 'left_torso-arm': {}, 'right_torso-arm': {}}
                     views = glob.glob(path.join(dataset, '*'))
-                    
                     for view in views:  # [rear, top]
                         angles = glob.glob(path.join(view, '*'))
-                        
                         for angle_path in angles:
+                            angle_name = path.basename(angle_path)
                             clips = glob.glob(path.join(angle_path, '*.txt'))
-                            all_clip_angle = read_angle_txt(clips)
-                            all_angle[path.basename(angle_path)] = all_clip_angle
+                            all_angle_view_feature = read_angle_txt(clips, all_angle_view_feature, angle_name)
                             
                 if path.basename(dataset) == 'coordinate_dataset':
-                    all_view_coord_feature = {'lateral_view': {}, 'rear_view': {}, 'top_view': {}}
                     views = glob.glob(path.join(dataset, '*'))
-                    
                     for coordinate_path in views:  # [lateral_view, rear_view, top_view]
                         clips = glob.glob(path.join(coordinate_path, '*.txt'))
-                        all_clip_coord_features = read_coordinate_feature_txt(clips, view=path.basename(coordinate_path))
-                        all_view_coord_feature[path.basename(coordinate_path)] = all_clip_coord_features
+                        all_angle_view_feature = read_coordinate_feature_txt(clips, all_angle_view_feature, view=path.basename(coordinate_path))
             
             label = {'label': path.basename(dir)}
-            all_clip_feature = all_angle|all_view_coord_feature|label
-            all_subject_feature[subject] = all_clip_feature
-        
+            all_clip_feature = all_angle_view_feature|label
+            all_subject_feature[path.basename(subject)] = all_clip_feature
+    all_subject_feature = sort_features(all_subject_feature)
     with open(path.join(output_root, 'data.json'), "w", encoding="utf-8") as f:
         json.dump(all_subject_feature, f, indent=4)
         
