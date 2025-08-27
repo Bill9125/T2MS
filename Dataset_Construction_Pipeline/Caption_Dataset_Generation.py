@@ -8,6 +8,7 @@ import os.path as path
 import os
 import re
 import textwrap
+from dotenv import load_dotenv
 
 def get_completion(user_prompt):
     completion = client.chat.completions.create(
@@ -79,7 +80,9 @@ if __name__ == "__main__":
     paser.add_argument('--output_path', type=str, default='./Data/benchpress/Caped_data.json')
     paser.add_argument('--max_retries', type=int, default=3)
     args = paser.parse_args()
-    client = openai.OpenAI(api_key='')
+    load_dotenv()
+    api_key = os.getenv("OPENAI_API_KEY")
+    client = openai.OpenAI(api_key=api_key)
     
     with open(args.data_path, 'r') as f:
         data = json.load(f)
