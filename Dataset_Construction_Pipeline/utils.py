@@ -2,7 +2,7 @@ from collections import defaultdict
 import matplotlib.pyplot as plt
 import os.path as path
 import numpy as np
-import os, re, glob, json, ast
+import os, re, glob, json, ast, csv
 
 feature = {'feature_0': 'bar_x', 'feature_1': 'bar_y', 'feature_2': 'barx/bar_y', 'feature_3': 'left_shoulder_y',
            'feature_4': 'right_shoulder_y', 'feature_5 ': 'left_dist', 'feature_6': 'right_dist', 'feature_7': 'left_elbow',
@@ -158,7 +158,15 @@ def process_wrist_to_shoulder_line(coords_list):
     return distances
 
 
-def merge_files(class_dir, output_root):
+def merge_files(class_dir, output_root, multi_error_path):
+    with open(multi_error_path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        me_subject = {}
+        for row in reader:
+            subject = row["\ufeff受試者資料夾名稱"]
+            label = f'{row["錯誤1"]}_{row["錯誤2"]}'
+            me_subject[subject] = label
+            
     if not path.exists(output_root):
         os.makedirs(output_root)
     all_subject_feature = {}
@@ -168,7 +176,6 @@ def merge_files(class_dir, output_root):
         
         for subject in subjects:
             datasets = glob.glob(path.join(subject, '*'))
-            all_clip_feature = {}
             all_angle_view_feature = {}
             
             for dataset in datasets:  # [angle, coordinate, video]
@@ -187,11 +194,13 @@ def merge_files(class_dir, output_root):
                         clips = glob.glob(path.join(coordinate_path, '*.txt'))
                         all_angle_view_feature = read_coordinate_feature_txt(clips, all_angle_view_feature, view=path.basename(coordinate_path))
             
-            label = {'label': path.basename(dir)}
-            all_clip_feature = all_angle_view_feature|label
-            all_subject_feature[path.basename(subject)] = all_clip_feature
+            if path.basename(subject) in me_subject:
+                all_subject_feature[f'{path.basename(subject)}_{me_subject[path.basename(subject)]}'] = all_angle_view_feature
+            else:
+                all_subject_feature[f'{path.basename(subject)}_{path.basename(dir)}'] = all_angle_view_feature
+            
     all_subject_feature = sort_features(all_subject_feature)
-    with open(path.join(output_root, 'data.json'), "w", encoding="utf-8") as f:
+    with open(path.join(output_root, 'labeled_data.json'), "w", encoding="utf-8") as f:
         json.dump(all_subject_feature, f, indent=4)
         
         

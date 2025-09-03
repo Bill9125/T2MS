@@ -1,1 +1,11 @@
 Failed to process sample subject_1_exp1 on 1 after 3 retries.
+Failed to process sample Data/public/BenchpressDataset/elbows_flaring/subject_1_exp1 on left_elbow after 3 retries.
+Failed to process sample subject_100_exp1 on 1 after 3 retries.
+Failed to process sample subject_100_exp1 on 2 after 3 retries.
+Failed to process sample subject_100_exp1 on 3 after 3 retries.
+Failed to process sample subject_100_exp1 on 4 after 3 retries.
+Failed to process sample subject_100_exp1 on 5 after 3 retries.
+Failed to process sample subject_100_exp1 on 6 after 3 retries.
+Failed to process sample subject_100_exp1 on 7 after 3 retries.
+Failed to process sample subject_100_exp1 on 8 after 3 retries.
+Failed to process sample subject_100_exp1 on 9 after 3 retries.

@@ -4,3 +4,5 @@ results
 metrics_test
 __pycache__
 .env
+error_log.txt
+tttttt.py
