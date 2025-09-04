@@ -17,6 +17,14 @@ feature_list = {'feature_0': 'bar_x', 'feature_1': 'bar_y', 'feature_2': 'barx/b
             'feature_8': 'left_shoulder', 'feature_9': 'right_elbow', 'feature_10': 'right_shoulder', 'feature_11': 'left_torso-arm',
             'feature_12': 'right_torso-arm'}
 
+feature_explaination = {'feature_0': 'Horizontal x-axis coordinate of the barbell end in the image/frame (lateral-view).', 'feature_1': 'Vertical y-axis coordinate of the barbell end in the image/frame (lateral-view).',
+                        'feature_2': 'Ratio of bar end coordinates, bar_x divided by bar_y; dimensionless.', 'feature_3': 'Vertical y-axis coordinate of the left shoulder in the rear (head-back) view.',
+                        'feature_4': 'Vertical y-axis coordinate of the right shoulder in the rear (head-back) view.', 'feature_5': 'Euclidean distance between the left hand and left shoulder along their connecting line in the top-down view.',
+                        'feature_6': 'Euclidean distance between the right hand and right shoulder along their connecting line in the top-down view.', 'feature_7': 'Elbow joint angle at the left side in the rear (head-back) view.',
+                        'feature_8': 'Shoulder joint angle at the left side in the rear (head-back) view, defined by torso and upper arm.', 'feature_9': 'Elbow joint angle at the right side in the rear (head-back) view.',
+                        'feature_10': 'Shoulder joint angle at the right side in the rear (head-back) view, defined by torso and upper arm.', 'feature_11': 'Angle at the left armpit between the torso axis and the left upper arm in the top-down view.',
+                        'feature_12': 'Angle at the right armpit between the torso axis and the right upper arm in the top-down view.'}
+
 def get_completion(user_prompt):
     completion = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -30,41 +38,6 @@ def get_completion(user_prompt):
     )
     return str(completion.choices[0].message.content).strip()
 
-def one_sample_data_summary(data):
-    formatted_json = """
-        {
-            "Trend Analysis": "..."
-        }
-        """
-    user_prompt = f"""
-        You are given a segment of multi-feature time series data.
-        Your task:
-        1. Analyze and summarize the temporal trends and the relationships among features.
-        2. ONLY output your result in the exact JSON format shown below.
-        3. The value of "Trend Analysis" MUST be a single descriptive string that integrates all features into one coherent narrative.
-        4. DO NOT output per-feature dictionaries, nested structures, or numeric key-value pairs.
-        5. The output MUST be less than 512 tokens.
-        6. The description MUST be consistent with the actual trends present in the data.
-        7. DO NOT add extra explanations, markdown, or commentary.
-        Given the multi-feature time series data
-        ```{data}```​
-        Use the following JSON format:
-        ```{formatted_json}```
-        """
-
-    start_time = time.time()
-    one_sample_completion = get_completion(user_prompt)
-    end_time = time.time()
-    raw_output = str(one_sample_completion).strip()
-    # 移除 ```json 或 ``` 包裹
-    cleaned = re.sub(r"^```(json)?|```$", "", raw_output, flags=re.MULTILINE).strip()
-    parsed = json.loads(cleaned)
-    print(parsed)
-    print(f"Time taken: {end_time - start_time:.2f} seconds")
-    encoding = tiktoken.encoding_for_model("gpt-4o")
-    print(f"Token count: {len(encoding.encode(user_prompt))}\n")
-    return parsed
-
 def clip_caption(features):
     # 先拿到每對 feature 的描述
     pairwise_descs = pairwise_summary(features)
@@ -77,16 +50,17 @@ def clip_caption(features):
 
     # 做總結
     final_prompt = f"""
-    You are given multiple pairwise analyses of time series features:
+    You are given multiple pairwise analyses of time series features, where each analysis describes the relationship between two features using their definitions:
 
     {combined_text}
 
     Task:
-    1. Summarize these observations into one coherent description.
-    2. The summary should highlight the overall temporal dynamics and inter-feature relationships across the clip.
-    3. The output MUST be less than 512 tokens.
-    4. DO NOT add extra explanations, markdown, or commentary.
-    5. Output only in the JSON format:
+    1. Summarize these pairwise observations into **one coherent description**.  
+    2. The summary should highlight the **overall temporal dynamics** and **inter-feature relationships** across the clip.  
+    3. Explicitly integrate feature meanings (e.g., barbell position, joint angles, distances).  
+    4. The output MUST be less than 512 tokens.  
+    5. DO NOT add extra explanations, markdown, or commentary.  
+    6. Output only in the JSON format:
     Use the following JSON format:
     ```{formatted_json}```
     """
@@ -116,13 +90,21 @@ def pairwise_summary(features):
                 
                 # 特徵與特徵文字描述 prompt
                 pair_prompt = f"""
-                Compare and analyze the temporal relationship between two features from a time series:
-                {f1} : {list(f1_data)}
-                {f2} : {list(f2_data)}
-                
-                Describe how their trends correlate, diverge, or interact over time.
-                Only output one concise descriptive sentence.
-                The output MUST be less than 64 tokens.
+                You are given two time series features with their values and definitions:
+
+                Feature A: {feature_list[f1]}  
+                Definition: {feature_explaination[f1]}  
+                Values: {list(f1_data)}
+
+                Feature B: {feature_list[f2]}  
+                Definition: {feature_explaination[f2]}  
+                Values: {list(f2_data)}
+
+                Task:  
+                1. Compare and analyze the temporal relationship between Feature A and Feature B.  
+                2. Highlight how their trends correlate, diverge, or interact over time, based on their definitions.  
+                3. Use a **precise and concise single sentence** (max 64 tokens).  
+                4. Focus on clarity, dynamics, and inter-feature meaning, not raw numbers.
                 """
                 
                 # 提交任務到執行緒池
