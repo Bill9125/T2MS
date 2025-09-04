@@ -5,7 +5,7 @@ import numpy as np
 import os, re, glob, json, ast, csv
 
 feature = {'feature_0': 'bar_x', 'feature_1': 'bar_y', 'feature_2': 'barx/bar_y', 'feature_3': 'left_shoulder_y',
-           'feature_4': 'right_shoulder_y', 'feature_5 ': 'left_dist', 'feature_6': 'right_dist', 'feature_7': 'left_elbow',
+           'feature_4': 'right_shoulder_y', 'feature_5': 'left_dist', 'feature_6': 'right_dist', 'feature_7': 'left_elbow',
            'feature_8': 'left_shoulder', 'feature_9': 'right_elbow', 'feature_10': 'right_shoulder', 'feature_11': 'left_torso-arm',
            'feature_12': 'right_torso-arm'}
 reverse_feature = {v: k for k, v in feature.items()}

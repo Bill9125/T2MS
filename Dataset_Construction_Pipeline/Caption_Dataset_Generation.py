@@ -13,7 +13,7 @@ import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 feature_list = {'feature_0': 'bar_x', 'feature_1': 'bar_y', 'feature_2': 'barx/bar_y', 'feature_3': 'left_shoulder_y',
-            'feature_4': 'right_shoulder_y', 'feature_5 ': 'left_dist', 'feature_6': 'right_dist', 'feature_7': 'left_elbow',
+            'feature_4': 'right_shoulder_y', 'feature_5': 'left_dist', 'feature_6': 'right_dist', 'feature_7': 'left_elbow',
             'feature_8': 'left_shoulder', 'feature_9': 'right_elbow', 'feature_10': 'right_shoulder', 'feature_11': 'left_torso-arm',
             'feature_12': 'right_torso-arm'}
 
@@ -175,34 +175,39 @@ if __name__ == "__main__":
     load_dotenv()
     api_key = os.getenv("OPENAI_API_KEY")
     client = openai.OpenAI(api_key=api_key)
+    found_start = False
     
     with open(args.data_path, 'r') as f:
         data = json.load(f)
+        
 
     for subject, clips in data.items():
-        for clip, features in clips.items():
-            string = ""
-            retries = 0
-            while retries < args.max_retries:
-                try:
-                    print(f'current sample is {subject} on {clip}')
-                    caption = clip_caption(features)
-                    save_dir = path.join(path.dirname(args.output_path), subject, clip)
-                    print(save_dir)
-                    if not path.exists(save_dir):
-                        os.makedirs(save_dir)
-                    txt_path = path.join(save_dir, 'caption.json')
-                    with open(txt_path, 'w', encoding="utf-8") as f:
-                        json.dump(caption, f, indent=4)
-                    fig_path = path.join(save_dir, 'fig.jpg')
-                    plot_data_to_picture(features, caption, fig_path)
-                    break
-                
-                except Exception as e:
-                    print(f"Error occurred: {e}. Retrying {retries + 1}/{args.max_retries}...")
-                    retries += 1
-                
-            if retries == args.max_retries:
-                error_message = f"Failed to process sample {subject} on {clip} after {args.max_retries} retries."
-                with open(f'error_log.txt', 'a') as file:
-                    file.write(error_message + "\n")
+        if subject == 'subject_45_exp1_correct':
+            found_start = True
+        if found_start:
+            for clip, features in clips.items():
+                string = ""
+                retries = 0
+                while retries < args.max_retries:
+                    try:
+                        print(f'current sample is {subject} on {clip}')
+                        caption = clip_caption(features)
+                        save_dir = path.join(path.dirname(args.output_path), subject, clip)
+                        print(save_dir)
+                        if not path.exists(save_dir):
+                            os.makedirs(save_dir)
+                        txt_path = path.join(save_dir, 'caption.json')
+                        with open(txt_path, 'w', encoding="utf-8") as f:
+                            json.dump(caption, f, indent=4)
+                        fig_path = path.join(save_dir, 'fig.jpg')
+                        plot_data_to_picture(features, caption, fig_path)
+                        break
+                    
+                    except Exception as e:
+                        print(f"Error occurred: {e}. Retrying {retries + 1}/{args.max_retries}...")
+                        retries += 1
+                    
+                if retries == args.max_retries:
+                    error_message = f"Failed to process sample {subject} on {clip} after {args.max_retries} retries."
+                    with open(f'error_log.txt', 'a') as file:
+                        file.write(error_message + "\n")
