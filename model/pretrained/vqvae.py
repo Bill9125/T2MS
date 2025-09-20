@@ -115,7 +115,7 @@ class vqvae(BaseModel):
         self.encoder = Encoder(1, num_hiddens, num_residual_layers, num_residual_hiddens, embedding_dim)
         self.decoder = Decoder(embedding_dim, num_hiddens, num_residual_layers, num_residual_hiddens)
 
-    def shared_eval(self, batch, optimizer, mode):
+    def shared_eval(self, batch, optimizer, mode): # pyright: ignore[reportIncompatibleMethodOverride]
         if mode == 'train':
             optimizer.zero_grad()
             z, before = self.encoder(batch)
@@ -132,7 +132,7 @@ class vqvae(BaseModel):
                 recon_error = F.mse_loss(data_recon, batch)
                 cross_loss = F.mse_loss(before, after)
                 loss = recon_error + cross_loss
-        return loss, recon_error, data_recon, z
+        return loss, recon_error, data_recon, z # pyright: ignore[reportPossiblyUnboundVariable]
 
     def forward(self, x):
         x = self.encoder(x)

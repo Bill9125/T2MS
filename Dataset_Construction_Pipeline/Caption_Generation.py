@@ -19,10 +19,10 @@ feature_list = {'feature_0': 'bar_x', 'feature_1': 'bar_y', 'feature_2': 'barx/b
 
 feature_explaination = {'feature_0': 'Horizontal x-axis coordinate of the barbell end in the image/frame (lateral-view).', 'feature_1': 'Vertical y-axis coordinate of the barbell end in the image/frame (lateral-view).',
                         'feature_2': 'Ratio of bar end coordinates, bar_x divided by bar_y; dimensionless.', 'feature_3': 'Vertical y-axis coordinate of the left shoulder in the rear (head-back) view.',
-                        'feature_4': 'Vertical y-axis coordinate of the right shoulder in the rear (head-back) view.', 'feature_5': 'Euclidean distance between the left hand and left shoulder along their connecting line in the top-down view.',
-                        'feature_6': 'Euclidean distance between the right hand and right shoulder along their connecting line in the top-down view.', 'feature_7': 'Elbow joint angle at the left side in the rear (head-back) view.',
-                        'feature_8': 'Shoulder joint angle at the left side in the rear (head-back) view, defined by torso and upper arm.', 'feature_9': 'Elbow joint angle at the right side in the rear (head-back) view.',
-                        'feature_10': 'Shoulder joint angle at the right side in the rear (head-back) view, defined by torso and upper arm.', 'feature_11': 'Angle at the left armpit between the torso axis and the left upper arm in the top-down view.',
+                        'feature_4': 'Vertical y-axis coordinate of the right shoulder in the rear (head-back) view.', 'feature_5': 'Perpendicular distance from the wrist to the extended line connecting the two shoulder joints in the top-down view.',
+                        'feature_6': 'Perpendicular distance from the wrist to the extended line connecting the two shoulder joints in the top-down view.', 'feature_7': 'Elbow joint angle at the left side in the rear (head-back) view.',
+                        'feature_8': 'Shoulder joint angle at the left side in the rear (head-back) view, defined by connecting line between the two shoulder joints and upper arm.', 'feature_9': 'Elbow joint angle at the right side in the rear (head-back) view.',
+                        'feature_10': 'Shoulder joint angle at the right side in the rear (head-back) view, defined by connecting line between the two shoulder joints and upper arm.', 'feature_11': 'Angle at the left armpit between the torso axis and the left upper arm in the top-down view.',
                         'feature_12': 'Angle at the right armpit between the torso axis and the right upper arm in the top-down view.'}
 
 def get_completion(user_prompt):
@@ -103,7 +103,7 @@ def pairwise_summary(features):
                 Task:  
                 1. Compare and analyze the temporal relationship between Feature A and Feature B.  
                 2. Highlight how their trends correlate, diverge, or interact over time, based on their definitions.  
-                3. Use a **precise and concise single sentence** (max 64 tokens).  
+                3. Use a **precise and concise single sentence** (max 128 tokens).  
                 4. Focus on clarity, dynamics, and inter-feature meaning, not raw numbers.
                 """
                 
@@ -149,47 +149,42 @@ def plot_data_to_picture(features, text, save_path):
         plt.close()
 
 if __name__ == "__main__":
-    paser = argparse.ArgumentParser()
-    paser.add_argument('--data_path', type=str, default='./Data/benchpress/labeled_data.json')
-    paser.add_argument('--output_path', type=str, default='./Data/benchpress/Caped_data.json')
-    paser.add_argument('--max_retries', type=int, default=3)
-    args = paser.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--data_path', type=str, default='./Data/benchpress/labeled_data.json')
+    parser.add_argument('--output_path', type=str, default='./Data/benchpress_Caption_with_feature_explaination/Caped_data.json')
+    parser.add_argument('--max_retries', type=int, default=3)
+    args = parser.parse_args()
     load_dotenv()
     api_key = os.getenv("OPENAI_API_KEY")
     client = openai.OpenAI(api_key=api_key)
-    found_start = False
     
     with open(args.data_path, 'r') as f:
         data = json.load(f)
         
-
     for subject, clips in data.items():
-        if subject == 'subject_45_exp1_correct':
-            found_start = True
-        if found_start:
-            for clip, features in clips.items():
-                string = ""
-                retries = 0
-                while retries < args.max_retries:
-                    try:
-                        print(f'current sample is {subject} on {clip}')
-                        caption = clip_caption(features)
-                        save_dir = path.join(path.dirname(args.output_path), subject, clip)
-                        print(save_dir)
-                        if not path.exists(save_dir):
-                            os.makedirs(save_dir)
-                        txt_path = path.join(save_dir, 'caption.json')
-                        with open(txt_path, 'w', encoding="utf-8") as f:
-                            json.dump(caption, f, indent=4)
-                        fig_path = path.join(save_dir, 'fig.jpg')
-                        plot_data_to_picture(features, caption, fig_path)
-                        break
-                    
-                    except Exception as e:
-                        print(f"Error occurred: {e}. Retrying {retries + 1}/{args.max_retries}...")
-                        retries += 1
-                    
-                if retries == args.max_retries:
-                    error_message = f"Failed to process sample {subject} on {clip} after {args.max_retries} retries."
-                    with open(f'error_log.txt', 'a') as file:
-                        file.write(error_message + "\n")
+        for clip, features in clips.items():
+            string = ""
+            retries = 0
+            while retries < args.max_retries:
+                try:
+                    print(f'current sample is {subject} on {clip}')
+                    caption = clip_caption(features)
+                    save_dir = path.join(path.dirname(args.output_path), subject, clip)
+                    print(save_dir)
+                    if not path.exists(save_dir):
+                        os.makedirs(save_dir)
+                    txt_path = path.join(save_dir, 'caption.json')
+                    with open(txt_path, 'w', encoding="utf-8") as f:
+                        json.dump(caption, f, indent=4)
+                    fig_path = path.join(save_dir, 'fig.jpg')
+                    plot_data_to_picture(features, caption, fig_path)
+                    break
+                
+                except Exception as e:
+                    print(f"Error occurred: {e}. Retrying {retries + 1}/{args.max_retries}...")
+                    retries += 1
+                
+            if retries == args.max_retries:
+                error_message = f"Failed to process sample {subject} on {clip} after {args.max_retries} retries."
+                with open(f'error_log.txt', 'a') as file:
+                    file.write(error_message + "\n")
