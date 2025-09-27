@@ -11,7 +11,10 @@ from sklearn.manifold import TSNE
 import seaborn as sns
 from datafactory.benchpress_dataloader import loader_provider
 from tqdm import tqdm
-from pathlib import Path
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+import os
+import numpy as np
 
 def seed_everything(seed_value=42):
     random.seed(seed_value)
@@ -23,10 +26,6 @@ def seed_everything(seed_value=42):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     print(f"seed: {seed_value}")
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-import os
-import numpy as np
 
 def plot_comparison_animation(real, recon, save_dir, gif_name='comparison.gif', fps=2):
     """
@@ -100,7 +99,9 @@ def flatten_sample(x_np):
     # 將 [n_f, T] 或 [T] 攤平成 1D 特徵向量用於 PCA/TSNE。
     return x_np.reshape(-1)
 
-def plot_pca_tsne(real_samples, reconstructed_samples, save_path):
+def plot_pca_tsne(real_samples, reconstructed_samples, gts, save_path):
+    category = {'correct':0, 'tilting_to_the_right':0, 'tilting_to_the_left':0, 'elbows_flaring':0, 'wrist_bending_backward':0, 'scapular_protraction':0}
+    
     if len(real_samples) == 0 or len(reconstructed_samples) == 0:
         print("沒有樣本可以繪製 PCA/t-SNE")
         return
@@ -121,35 +122,64 @@ def plot_pca_tsne(real_samples, reconstructed_samples, save_path):
         
         return np.stack(padded, axis=0)
     
-    try:
-        real_flat = safe_flatten_and_pad(real_samples)
-        reco_flat = safe_flatten_and_pad(reconstructed_samples)
-        
-        combined = np.vstack((real_flat, reco_flat))
-        labels = ['Real'] * len(real_flat) + ['Reconstructed'] * len(reco_flat)
+    real_flat = safe_flatten_and_pad(real_samples)
+    reco_flat = safe_flatten_and_pad(reconstructed_samples)
+    
+    combined = np.vstack((real_flat, reco_flat))
+    labels = ['Real'] * len(real_flat) + ['Reconstructed'] * len(reco_flat)
+    gtss = gts + gts
 
-        # PCA
-        pca = PCA(n_components=2)
-        combined_pca = pca.fit_transform(combined)
+    # PCA
+    pca = PCA(n_components=2)
+    combined_pca = pca.fit_transform(combined)
+    
+    cluster = {'left_down':category, 'left_up':category, 'right':category}
+    for i, (x, y) in enumerate(combined_pca):
+        if x<0 and y<-2000:
+            clust = 'left_down'
+        elif x<0 and y>1000:
+            clust = 'left_up'
+        elif x>0 and y>-2000:
+            clust = 'right'
+        else:
+            raise ValueError('Invalid cluster')
+        for gts in gtss[i]:
+            for gt in gts:
+                cluster[clust][gt]+=1
+    print(cluster)
 
-        # t-SNE
-        n = combined.shape[0]
-        perplexity = max(2, min(n - 1, 30))
-        tsne = TSNE(n_components=2, perplexity=perplexity, init='pca', learning_rate='auto')
-        combined_tsne = tsne.fit_transform(combined)
+    # t-SNE
+    n = combined.shape[0]
+    perplexity = max(2, min(n - 1, 30))
+    tsne = TSNE(n_components=2, perplexity=perplexity, init='pca', learning_rate='auto')
+    combined_tsne = tsne.fit_transform(combined)
+    
+    cluster = {'left_down':category, 'left_up':category, 'right':category}
+    for i, (x, y) in enumerate(combined_pca):
+        if x<20 and y<-18:
+            clust = 'left_down'
+        elif x<5 and y>-5:
+            clust = 'left_up'
+        elif x>5 and 40>y>-20:
+            clust = 'right'
+        else:
+            print(x, y)
+            continue
+        for gts in gtss[i]:
+            for gt in gts:
+                cluster[clust][gt]+=1
+    print(cluster)
 
-        fig, axs = plt.subplots(1, 2, figsize=(12, 6))
-        sns.scatterplot(x=combined_pca[:, 0], y=combined_pca[:, 1], hue=labels, ax=axs[0])
-        axs[0].set_title('PCA')
-        sns.scatterplot(x=combined_tsne[:, 0], y=combined_tsne[:, 1], hue=labels, ax=axs[1])
-        axs[1].set_title('t-SNE')
-        plt.legend()
-        os.makedirs(save_path, exist_ok=True)
-        plt.savefig(f"{save_path}/pca_tsne.png")
-        plt.close()
-        
-    except Exception as e:
-        print(f"PCA/t-SNE 繪製失敗: {e}")
+    fig, axs = plt.subplots(1, 2, figsize=(12, 6))
+    sns.scatterplot(x=combined_pca[:, 0], y=combined_pca[:, 1], hue=labels, ax=axs[0])
+    axs[0].set_title('PCA')
+    sns.scatterplot(x=combined_tsne[:, 0], y=combined_tsne[:, 1], hue=labels, ax=axs[1])
+    axs[1].set_title('t-SNE')
+    plt.legend()
+    os.makedirs(save_path, exist_ok=True)
+    plt.savefig(f"{save_path}/pca_tsne.png")
+    plt.close()
+    
 
 def any_length_evaluation(samples):
     # 將不同 T 的樣本分桶並各自堆疊（若桶為空則回傳空陣列）。
@@ -164,11 +194,12 @@ def inference(model, test_loader, device, save_dir, num_samples=None):
     model.eval()
     real_samples = []
     reconstructed_samples = []
+    gts = []
     with torch.no_grad():
         seen_batches = 0
         for batch in test_loader:
-            # batch 是 List[(texts, xs, embeddings)]，逐組處理
-            for (texts, xs, embeddings) in batch:
+            # batch 是 List[(texts, xs, embeddings, gt_cat)]，逐組處理
+            for (texts, xs, embeddings, gt_cat) in batch:
                 xs = xs.float().to(device)  # [B, n_f, T]
                 loss, recon_error, reconstructed, z = model.shared_eval(xs, None, mode='test')
                 
@@ -178,6 +209,7 @@ def inference(model, test_loader, device, save_dir, num_samples=None):
                 
                 # 收集所有樣本而不是逐一繪圖
                 for b in range(real_np.shape[0]):
+                    gts.append(gt_cat)
                     real_samples.append(real_np[b])
                     reconstructed_samples.append(reco_np[b])
                     
@@ -189,8 +221,8 @@ def inference(model, test_loader, device, save_dir, num_samples=None):
 
     # 在最後一次性生成動畫
     if len(real_samples) > 0 and len(reconstructed_samples) > 0:
-        plot_comparison_animation(real_samples, reconstructed_samples, save_dir, fps=1)
-        plot_pca_tsne(real_samples, reconstructed_samples, save_dir)
+        # plot_comparison_animation(real_samples, reconstructed_samples, save_dir, fps=1)
+        plot_pca_tsne(real_samples, reconstructed_samples, gts, save_dir)
         
         # 計算 MAE/RMSE
         # R = np.stack([flatten_sample(x) for x in real_samples], axis=0)
@@ -208,8 +240,9 @@ def inference(model, test_loader, device, save_dir, num_samples=None):
         # print(f"推論完成. MAE: {mae:.6f}, RMSE: {rmse:.6f}")
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset_path', type=str, default='./Data/benchpress_data.json', help='dataset name')
-parser.add_argument('--caption_data_path', type=str, default='./Data/benchpress_Caption')
+parser.add_argument('--dataset_name', type=str, default='benchpress', help='dataset name')
+parser.add_argument('--caption', type=str, default='Caption')
+parser.add_argument('--dataset_root', type=str, default='./Data', help='dataset root')
 parser.add_argument('--split_base_num', type=int, default=36)
 parser.add_argument('--batch_size', type=int, default=8)
 parser.add_argument('--num_training_updates', type=int, default=75000, help='number of training updates/epochs')
@@ -230,7 +263,7 @@ parser.add_argument('--commitment_cost', type=float, default=0.25, help='commitm
 args = parser.parse_args()
 
 if __name__ == '__main__':
-    save_folder_name = '{}_{}_epoch{}'.format(args.split_base_num, Path(args.dataset_path).stem, args.num_training_updates)
+    save_folder_name = '{}_{}_epoch{}'.format(args.split_base_num, args.dataset_name, args.num_training_updates)
     save_dir = os.path.join(args.save_path, save_folder_name)
     os.makedirs(save_dir, exist_ok=True)
 

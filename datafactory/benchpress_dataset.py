@@ -18,9 +18,11 @@ class BenchpressT2SDataset(Dataset):
         self,
         json_path: str,
         caption_root: str,
+        period: str,
         emb_dim: int = 128,
-        data_dim: int = 36
+        data_dim: int = 36,
     ):
+        category = ['correct', 'tilting_to_the_right', 'tilting_to_the_left', 'elbows_flaring', 'wrist_bending_backward', 'scapular_protraction']
         super().__init__()
         with open(json_path, "r", encoding="utf-8") as f:
             all_data = json.load(f)
@@ -31,6 +33,11 @@ class BenchpressT2SDataset(Dataset):
         min_len = float('inf')  # 初始化為無限大
         
         for subject, clips in all_data.items():
+            gt_cat = []
+            for cat in category:
+                if cat in subject:
+                    gt_cat.append(cat)
+                    
             for clip, feat_dict in clips.items():
                 caption_path = path.join(caption_root, subject, clip, 'caption.json')
                 with open(caption_path, 'r', encoding="utf-8") as f:
@@ -61,51 +68,52 @@ class BenchpressT2SDataset(Dataset):
                 lengths.append(current_T)
                 max_len = max(max_len, current_T)
                 min_len = min(min_len, current_T)
-                
-                def _map_target_len(T: int, target_T):
-                    if target_T == 36:
-                        if T < 58:
-                            return target_T
-                        else:
-                            return 0
-                    elif target_T == 72:
-                        if 58 <= T < 78:
-                            return target_T
-                        else:
-                            return 0
-                    elif target_T == 144:
-                        if T >= 78:
-                            return target_T
-                        else:
-                            return 0
-                    else:
-                        raise ValueError(f'Undefined length {target_T}.')
 
                 # [n_f, T]
                 x_nfT = torch.stack(seqs_T, dim=0)
                 
-                # 依規則對齊到 (36, 72, 144)
-                Tcur = x_nfT.size(1)
-                Ttar = _map_target_len(Tcur, data_dim)
-                if not Ttar:
-                    continue
+                # 在訓練時，依規則對齊到 (36, 72, 144)
+                if period == 'train':
+                    Tcur = x_nfT.size(1)
+                    Ttar = self._map_target_len(Tcur, data_dim)
+                    if not Ttar:
+                        continue
 
-                if Ttar != Tcur:
-                    x_1cT = x_nfT.unsqueeze(0)  # [1, n_f, T]
-                    if Tcur > Ttar:
-                        # 下採樣：建議用自適應平均池化以抑制混疊
-                        x_1cT = F.adaptive_avg_pool1d(x_1cT, output_size=Ttar)  # [1, n_f, Ttar]
-                    else:
-                        # 上採樣：線性內插到目標長度
-                        x_1cT = F.interpolate(x_1cT, size=Ttar, mode='linear', align_corners=True)  # [1, n_f, Ttar]
-                    x_nfT = x_1cT.squeeze(0)  # [n_f, Ttar]
+                    if Ttar != Tcur:
+                        x_1cT = x_nfT.unsqueeze(0)  # [1, n_f, T]
+                        if Tcur > Ttar:
+                            # 下採樣：建議用自適應平均池化以抑制混疊
+                            x_1cT = F.adaptive_avg_pool1d(x_1cT, output_size=Ttar)  # [1, n_f, Ttar]
+                        else:
+                            # 上採樣：線性內插到目標長度
+                            x_1cT = F.interpolate(x_1cT, size=Ttar, mode='linear', align_corners=True)  # [1, n_f, Ttar]
+                        x_nfT = x_1cT.squeeze(0)  # [n_f, Ttar]
 
                 if isinstance(embedding, np.ndarray):
                     embedding = torch.from_numpy(embedding)
                 elif not torch.is_tensor(embedding):
                     embedding = torch.as_tensor(embedding, dtype=torch.float32)
 
-                self.records.append((text, x_nfT, embedding))
+                self.records.append((text, x_nfT, embedding, gt_cat))
+    
+    def _map_target_len(self, T: int, target_T):
+        if target_T == 36:
+            if T < 58:
+                return target_T
+            else:
+                return 0
+        elif target_T == 72:
+            if 58 <= T < 78:
+                return target_T
+            else:
+                return 0
+        elif target_T == 144:
+            if T >= 78:
+                return target_T
+            else:
+                return 0
+        else:
+            raise ValueError(f'Undefined length {target_T}.')
         
     def __len__(self):
         return len(self.records)
