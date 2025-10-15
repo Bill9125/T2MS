@@ -44,7 +44,7 @@ def clip_caption(features):
     combined_text = "\n".join(pairwise_descs)
     formatted_json = """
         {
-            "Feature Interaction Summary": "..."
+            "Summary": "..."
         }
     """
 
@@ -55,12 +55,12 @@ def clip_caption(features):
     {combined_text}
 
     Task:
-    1. Summarize these pairwise observations into **one coherent description**.  
-    2. The summary should highlight the **overall temporal dynamics** and **inter-feature relationships** across the clip.  
-    3. Explicitly integrate feature meanings (e.g., barbell position, joint angles, distances).  
-    4. The output MUST be less than 512 tokens.  
-    5. DO NOT add extra explanations, markdown, or commentary.  
-    6. Output only in the JSON format:
+    1. Summarize these pairwise observations into **one coherent description**.
+    2. Highlight the **overall temporal dynamics** and **inter-feature relationships** across the clip.
+    4. Identify and retain only the **notable extreme values** (e.g., exceptionally high or low points that strongly affect dynamics).
+    5. The output MUST be less than 512 tokens.
+    6. DO NOT add extra explanations, markdown, or commentary.
+    7. Output only in the JSON format:
     Use the following JSON format:
     ```{formatted_json}```
     """
@@ -72,16 +72,16 @@ def clip_caption(features):
     parsed = json.loads(cleaned)
     print(parsed)
     print(f"Time taken: {end_time - start_time:.2f} seconds")
-    encoding = tiktoken.encoding_for_model("gpt-4o")
+    encoding = tiktoken.encoding_for_model("gpt-4o-mini")
     print(f"Token count: {len(encoding.encode(final_prompt))}\n")
     return parsed
 
 def pairwise_summary(features):
     pair_descriptions = []
-    feature_names = list(features.keys())
+    feature_names = list(features.keys())[3:]
     
     # 使用 ThreadPoolExecutor 來管理執行緒
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    with ThreadPoolExecutor(max_workers=11) as executor:
         future_to_pair = {}
         
         for i, f1 in enumerate(feature_names):
@@ -90,21 +90,26 @@ def pairwise_summary(features):
                 
                 # 特徵與特徵文字描述 prompt
                 pair_prompt = f"""
-                You are given two time series features with their values and definitions:
+                    You are given two time series features with their values and definitions:
+                    
+                    {feature_list[f1]}
+                    Definition: {feature_explaination[f1]}  
+                    Values: {list(f1_data)}
+                    Max Value: {max(f1_data)}
+                    Min Value: {min(f1_data)}
 
-                Feature A: {feature_list[f1]}  
-                Definition: {feature_explaination[f1]}  
-                Values: {list(f1_data)}
+                    {feature_list[f2]}  
+                    Definition: {feature_explaination[f2]}  
+                    Values: {list(f2_data)}  
+                    Max Value: {max(f2_data)}  
+                    Min Value: {min(f2_data)}
 
-                Feature B: {feature_list[f2]}  
-                Definition: {feature_explaination[f2]}  
-                Values: {list(f2_data)}
-
-                Task:  
-                1. Compare and analyze the temporal relationship between Feature A and Feature B.  
-                2. Highlight how their trends correlate, diverge, or interact over time, based on their definitions.  
-                3. Use a **precise and concise single sentence** (max 128 tokens).  
-                4. Focus on clarity, dynamics, and inter-feature meaning, not raw numbers.
+                    Task:  
+                    1. Compare and analyze the temporal relationship between {f1} and {f2}.  
+                    2. Highlight how their trends correlate, diverge, or interact over time, based on their definitions.  
+                    3. Consider how the maximum and minimum values of both features influence their temporal dynamics.
+                    4. Use a **precise and concise single sentence** (max 128 tokens).  
+                    5. Focus on clarity, dynamics, and inter-feature meaning.
                 """
                 
                 # 提交任務到執行緒池
@@ -116,7 +121,6 @@ def pairwise_summary(features):
             f1, f2 = future_to_pair[future]
             try:
                 desc = future.result()
-                print(desc)
                 pair_descriptions.append(desc)
             except Exception as exc:
                 print(f'Pair {f1}-{f2} generated an exception: {exc}')
@@ -137,7 +141,7 @@ def plot_data_to_picture(features, text, save_path):
 
         
     # 自動換行：每 60 字符換一行
-    wrapped_text = textwrap.fill(text['Feature Interaction Summary'], width=75)
+    wrapped_text = textwrap.fill(text['Summary'], width=75)
     plt.title(wrapped_text, fontsize=10, loc='center')
     plt.xlabel("Frame")
     plt.ylabel("Value")
@@ -150,8 +154,8 @@ def plot_data_to_picture(features, text, save_path):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_path', type=str, default='./Data/benchpress/labeled_data.json')
-    parser.add_argument('--output_path', type=str, default='./Data/benchpress_Caption_with_feature_explaination/Caped_data.json')
+    parser.add_argument('--data_path', type=str, default='./Data/benchpress/data.json')
+    parser.add_argument('--output_path', type=str, default='./Data/benchpress/Caption_explain_no_barbell')
     parser.add_argument('--max_retries', type=int, default=3)
     args = parser.parse_args()
     load_dotenv()
@@ -169,8 +173,7 @@ if __name__ == "__main__":
                 try:
                     print(f'current sample is {subject} on {clip}')
                     caption = clip_caption(features)
-                    save_dir = path.join(path.dirname(args.output_path), subject, clip)
-                    print(save_dir)
+                    save_dir = path.join(args.output_path, subject, clip)
                     if not path.exists(save_dir):
                         os.makedirs(save_dir)
                     txt_path = path.join(save_dir, 'caption.json')

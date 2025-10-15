@@ -31,7 +31,7 @@ def custom_collate_fn(batch):
     batches = []
     for idx, data_list in grouped_data.items():
         if data_list:
-            batch_texts, batch_xs, batch_embeddings, gt_cat = zip(*data_list)
+            batch_texts, batch_xs, batch_embeddings = zip(*data_list)
             batch_texts = [torch.from_numpy(text) if isinstance(text, np.ndarray) else text for text in batch_texts]
             batch_xs = torch.stack(
                 [torch.from_numpy(x) if isinstance(x, np.ndarray) else x for x in batch_xs]
@@ -39,7 +39,7 @@ def custom_collate_fn(batch):
             batch_embeddings = torch.stack(
                 [torch.from_numpy(embedding) if isinstance(embedding, np.ndarray) else embedding for embedding in batch_embeddings]
             )
-            batches.append((batch_texts, batch_xs, batch_embeddings, gt_cat))
+            batches.append((batch_texts, batch_xs, batch_embeddings))
     return batches
 
 def loader_provider(args, period='train'):
@@ -82,15 +82,14 @@ def loader_provider(args, period='train'):
     
     # 可重現的隨機切分
     gen = torch.Generator().manual_seed(args.general_seed)
-    r_train, r_valid, r_test = (0.85, 0.05, 0.1)
-    assert abs(r_train + r_valid + r_test - 1.0) < 1e-8, "split_ratio must sum to 1.0"
+    r_train, r_test = (0.9, 0.1)
+    assert abs(r_train + r_test - 1.0) < 1e-8, "split_ratio must sum to 1.0"
 
-    train_ds, valid_ds, test_ds = random_split(dataset, [r_train, r_valid, r_test], generator=gen)
-    
+    train_ds, test_ds = random_split(dataset, [r_train, r_test], generator=gen)
+
     train_loader = DataLoader(train_ds, shuffle=True, drop_last=True, **common) # type: ignore
-    valid_loader = DataLoader(valid_ds, shuffle=False, drop_last=False, **common) # type: ignore
     test_loader  = DataLoader(test_ds,  shuffle=False, drop_last=False, **common) # type: ignore
-    return train_loader, valid_loader, test_loader
+    return train_loader, test_loader
 
 if __name__ == "__main__":
     pass

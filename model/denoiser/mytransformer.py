@@ -125,11 +125,11 @@ class Transformerlayer(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self):
+    def __init__(self, dim):
         super().__init__()
         # patchify
         self.channel=1
-        self.H = 300 #6 # 30
+        self.H = dim 
         self.W = 64
         emb_size=128 #64
         self.patch_size=2

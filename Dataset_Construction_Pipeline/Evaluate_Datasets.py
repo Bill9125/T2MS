@@ -3,15 +3,6 @@ import numpy as np
 import os
 import ast
 
-###########################################
-#         read candidate csv data        #
-###########################################
-domain = ['ETTh1', 'ETTm1', 'electricity', 'exchange_rate', 'air-quality','traffic']
-domain_index = 0
-length = 24
-df = pd.read_csv(os.path.join('./Data/ours', f'embedding_cleaned_{domain[domain_index]}_{length}.csv'), index_col=False)
-
-
 def cosine_similarity(a, b):
     a = np.array(a).ravel()
     b = np.array(b).ravel()
@@ -27,34 +18,42 @@ def cosine_similarity(a, b):
 def clean_embedding_string(embedding_str):
     return [float(num) for num in embedding_str.replace('[', '').replace(']', '').strip().split()]
 
+if __name__ == '__main__':
+    ###########################################
+    #         read candidate csv data        #
+    ###########################################
+    domain = ['ETTh1', 'ETTm1', 'electricity', 'exchange_rate', 'air-quality','traffic']
+    domain_index = 0
+    length = 24
+    df = pd.read_csv(os.path.join('./Data/ours', f'embedding_cleaned_{domain[domain_index]}_{length}.csv'), index_col=False)
 
-# malloc space and get unique sample id
-final_rows = []
-unique_sample_ids = df['SampleID'].unique()
+    # malloc space and get unique sample id
+    final_rows = []
+    unique_sample_ids = df['SampleID'].unique()
 
-for sample_id in unique_sample_ids:
-    sample_groups = df[df['SampleID'] == sample_id]
-    processed_embedding_samples = []
-    print('Processing sample', sample_id)
-    for index, sample_group in sample_groups.iterrows():
-        embedding_sample = clean_embedding_string(sample_group['TextEmbedding'])
-        processed_embedding_samples.append(embedding_sample)
+    for sample_id in unique_sample_ids:
+        sample_groups = df[df['SampleID'] == sample_id]
+        processed_embedding_samples = []
+        print('Processing sample', sample_id)
+        for index, sample_group in sample_groups.iterrows():
+            embedding_sample = clean_embedding_string(sample_group['TextEmbedding'])
+            processed_embedding_samples.append(embedding_sample)
 
-    embeddings = np.array(processed_embedding_samples)
+        embeddings = np.array(processed_embedding_samples)
 
-    # calculate cosine similarity
-    similarity_matrix = np.array(
-        [[cosine_similarity(embeddings[i], embeddings[j]) for j in range(len(embeddings))] for i in
-         range(len(embeddings))]
-    )
-    similarity_sums = similarity_matrix.sum(axis=1)
-    max_index = np.argmax(similarity_sums)
+        # calculate cosine similarity
+        similarity_matrix = np.array(
+            [[cosine_similarity(embeddings[i], embeddings[j]) for j in range(len(embeddings))] for i in
+            range(len(embeddings))]
+        )
+        similarity_sums = similarity_matrix.sum(axis=1)
+        max_index = np.argmax(similarity_sums)
 
-    sample_group = df[(df['SampleID'] == sample_id) & (df['SampleNumID'] == max_index + 1)]
-    final_rows.append(sample_group)
+        sample_group = df[(df['SampleID'] == sample_id) & (df['SampleNumID'] == max_index + 1)]
+        final_rows.append(sample_group)
 
-final_df = pd.concat(final_rows, ignore_index=True)
-final_df['SampleNumID'] = 1
-final_df.to_csv(os.path.join('./Data/ours', f'embedding_cleaned_{domain[domain_index]}_{length}_refined.csv'),
-                index=False)
-print("Refined CSV file saved successfully.")
+    final_df = pd.concat(final_rows, ignore_index=True)
+    final_df['SampleNumID'] = 1
+    final_df.to_csv(os.path.join('./Data/ours', f'embedding_cleaned_{domain[domain_index]}_{length}_refined.csv'),
+                    index=False)
+    print("Refined CSV file saved successfully.")

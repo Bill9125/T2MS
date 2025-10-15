@@ -47,7 +47,7 @@ class Encoder(nn.Module):
         self._pre_vq_conv = nn.Conv1d(num_hiddens, embedding_dim, kernel_size=1, stride=1)
 
     def forward(self, inputs):
-        x = inputs # -> [B, 13, T]
+        x = inputs # -> [B, 10, T]
 
         x = self._conv_1(x)     # -> [B, H/2, T/2]
         x = F.relu(x)
@@ -81,7 +81,7 @@ class Decoder(nn.Module):
         x = self._conv_trans_1(x)   # -> [B, H/2, T]
         
         x = F.relu(x)
-        x = self._conv_trans_2(x)   # -> [B, 13, L+e]
+        x = self._conv_trans_2(x)   # -> [B, 10, L+e]
         x = F.interpolate(x, size=length, mode='linear', align_corners=True)
         return x, after
 
@@ -94,22 +94,22 @@ class vqvae(BaseModel):
         embedding_dim = args.embedding_dim
         flow_dim = args.flow_dim
 
-        # in_channels=13（多特徵）
+        # in_channels=10（多特徵）
         self.encoder = Encoder(
-            in_channels=13,
+            in_channels=10,
             num_hiddens=num_hiddens,
             num_residual_layers=num_residual_layers,
             num_residual_hiddens=num_residual_hiddens,
             embedding_dim=embedding_dim,
             flow_dim=flow_dim
         )
-        # decoder 輸出 13 通道
+        # decoder 輸出 10 通道
         self.decoder = Decoder(
             in_channels=embedding_dim,
             num_hiddens=num_hiddens,
             num_residual_layers=num_residual_layers,
             num_residual_hiddens=num_residual_hiddens,
-            out_channels=13
+            out_channels=10
         )
 
     def shared_eval(self, batch, optimizer, mode): # pyright: ignore[reportIncompatibleMethodOverride]

@@ -203,22 +203,3 @@ def merge_files(class_dir, output_root, multi_error_path):
     with open(path.join(output_root, 'labeled_data.json'), "w", encoding="utf-8") as f:
         json.dump(all_subject_feature, f, indent=4)
         
-        
-    
-    #         zip_data = sort_files(info)
-    #         arrange = {}
-    #         for i, z in enumerate(zip_data):
-    #             tmp = []
-    #             for txt in z:
-    #                 data = np.loadtxt(txt, delimiter=",")
-    #                 data = data[:, 1:]
-    #                 if path.basename(path.dirname(txt)) == 'bar':
-    #                     data = data[:, 0:2]
-    #                 tmp.append(data)
-    #             arrange[i] = np.hstack(tmp).tolist()
-    #             if len(arrange[i]) < 50 or len(arrange[i]) > 250:
-    #                 print(f"Warning: Sample {i+1} in {path.basename(subject)}/{path.basename(recording)} has an unexpected length: {len(arrange[i])}")
-    #                 continue
-    #             lengths.append(len(arrange[i]))
-    #             json.dump(arrange, open(path.join(output_dir, 'data.json'), 'w'), indent=4)
-    # return lengths

@@ -13,19 +13,7 @@ from datafactory.benchpress_dataloader import loader_provider
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-import os
-import numpy as np
-
-def seed_everything(seed_value=42):
-    random.seed(seed_value)
-    np.random.seed(seed_value)
-    torch.manual_seed(seed_value)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed_value)
-        torch.cuda.manual_seed_all(seed_value)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-    print(f"seed: {seed_value}")
+from utils import seed_everything, plot_loss_curve
 
 def plot_comparison_animation(real, recon, save_dir, gif_name='comparison.gif', fps=2):
     """
@@ -39,11 +27,11 @@ def plot_comparison_animation(real, recon, save_dir, gif_name='comparison.gif', 
     # 建圖：1×2 欄，左 = 所有 Real 13 條；右 = 所有 Recon 13 條
     fig, (axL, axR) = plt.subplots(1, 2, figsize=(12, 5))
 
-    # 為 13 條曲線各建一條 Line2D
+    # 為 10 條曲線各建一條 Line2D
     cmap = plt.get_cmap('tab20')
-    colors = [cmap(i) for i in np.linspace(0, 1, 13, endpoint=False)]
-    lines_real = [axL.plot([], [], c=colors[i], lw=1.2, label=f'f{i}')[0] for i in range(13)]
-    lines_reco = [axR.plot([], [], c=colors[i], lw=1.2, label=f'f{i}')[0] for i in range(13)]
+    colors = [cmap(i) for i in np.linspace(0, 1, 10, endpoint=False)]
+    lines_real = [axL.plot([], [], c=colors[i], lw=1.2, label=f'f{i}')[0] for i in range(10)]
+    lines_reco = [axR.plot([], [], c=colors[i], lw=1.2, label=f'f{i}')[0] for i in range(10)]
 
     # 標題、圖例
     axL.set_title('Real');  axR.set_title('Reconstructed')
@@ -61,11 +49,11 @@ def plot_comparison_animation(real, recon, save_dir, gif_name='comparison.gif', 
         return lines_real + lines_reco + [txt_L, txt_R]
 
     def update(idx):
-        r = real[idx]      # [13, T1]
-        z = recon[idx]     # [13, T2]
+        r = real[idx]      # [10, T1]
+        z = recon[idx]     # [10, T2]
 
         # 每條特徵曲線分別更新
-        for i in range(13):
+        for i in range(10):
             xr = np.arange(r.shape[1]);  xz = np.arange(z.shape[1])
             lines_real[i].set_data(xr, r[i])
             lines_reco[i].set_data(xz, z[i])
@@ -99,13 +87,7 @@ def flatten_sample(x_np):
     # 將 [n_f, T] 或 [T] 攤平成 1D 特徵向量用於 PCA/TSNE。
     return x_np.reshape(-1)
 
-def plot_pca_tsne(real_samples, reconstructed_samples, gts, save_path):
-    category = {'correct':0, 'tilting_to_the_right':0, 'tilting_to_the_left':0, 'elbows_flaring':0, 'wrist_bending_backward':0, 'scapular_protraction':0}
-    
-    if len(real_samples) == 0 or len(reconstructed_samples) == 0:
-        print("沒有樣本可以繪製 PCA/t-SNE")
-        return
-    
+def plot_pca_tsne(real_samples, reconstructed_samples, save_path):
     # 檢查並處理不同形狀的樣本
     def safe_flatten_and_pad(samples):
         flattened = [flatten_sample(x) for x in samples]
@@ -127,48 +109,16 @@ def plot_pca_tsne(real_samples, reconstructed_samples, gts, save_path):
     
     combined = np.vstack((real_flat, reco_flat))
     labels = ['Real'] * len(real_flat) + ['Reconstructed'] * len(reco_flat)
-    gtss = gts + gts
 
     # PCA
     pca = PCA(n_components=2)
     combined_pca = pca.fit_transform(combined)
-    
-    cluster = {'left_down':category, 'left_up':category, 'right':category}
-    for i, (x, y) in enumerate(combined_pca):
-        if x<0 and y<-2000:
-            clust = 'left_down'
-        elif x<0 and y>1000:
-            clust = 'left_up'
-        elif x>0 and y>-2000:
-            clust = 'right'
-        else:
-            raise ValueError('Invalid cluster')
-        for gts in gtss[i]:
-            for gt in gts:
-                cluster[clust][gt]+=1
-    print(cluster)
 
     # t-SNE
     n = combined.shape[0]
     perplexity = max(2, min(n - 1, 30))
     tsne = TSNE(n_components=2, perplexity=perplexity, init='pca', learning_rate='auto')
     combined_tsne = tsne.fit_transform(combined)
-    
-    cluster = {'left_down':category, 'left_up':category, 'right':category}
-    for i, (x, y) in enumerate(combined_pca):
-        if x<20 and y<-18:
-            clust = 'left_down'
-        elif x<5 and y>-5:
-            clust = 'left_up'
-        elif x>5 and 40>y>-20:
-            clust = 'right'
-        else:
-            print(x, y)
-            continue
-        for gts in gtss[i]:
-            for gt in gts:
-                cluster[clust][gt]+=1
-    print(cluster)
 
     fig, axs = plt.subplots(1, 2, figsize=(12, 6))
     sns.scatterplot(x=combined_pca[:, 0], y=combined_pca[:, 1], hue=labels, ax=axs[0])
@@ -194,12 +144,11 @@ def inference(model, test_loader, device, save_dir, num_samples=None):
     model.eval()
     real_samples = []
     reconstructed_samples = []
-    gts = []
     with torch.no_grad():
         seen_batches = 0
         for batch in test_loader:
             # batch 是 List[(texts, xs, embeddings, gt_cat)]，逐組處理
-            for (texts, xs, embeddings, gt_cat) in batch:
+            for (texts, xs, embeddings) in batch:
                 xs = xs.float().to(device)  # [B, n_f, T]
                 loss, recon_error, reconstructed, z = model.shared_eval(xs, None, mode='test')
                 
@@ -209,7 +158,6 @@ def inference(model, test_loader, device, save_dir, num_samples=None):
                 
                 # 收集所有樣本而不是逐一繪圖
                 for b in range(real_np.shape[0]):
-                    gts.append(gt_cat)
                     real_samples.append(real_np[b])
                     reconstructed_samples.append(reco_np[b])
                     
@@ -221,48 +169,33 @@ def inference(model, test_loader, device, save_dir, num_samples=None):
 
     # 在最後一次性生成動畫
     if len(real_samples) > 0 and len(reconstructed_samples) > 0:
-        # plot_comparison_animation(real_samples, reconstructed_samples, save_dir, fps=1)
-        plot_pca_tsne(real_samples, reconstructed_samples, gts, save_dir)
-        
-        # 計算 MAE/RMSE
-        # R = np.stack([flatten_sample(x) for x in real_samples], axis=0)
-        # Z = np.stack([flatten_sample(x) for x in reconstructed_samples], axis=0)
-        # min_len = min(R.shape[1], Z.shape[1])
-        # R, Z = R[:, :min_len], Z[:, :min_len]
-        # mae = np.mean(np.abs(R - Z))
-        # mse = np.mean((R - Z) ** 2)
-        # rmse = np.sqrt(mse)
-        
-        # metrics_file_path = f"{save_dir}/metrics.txt"
-        # with open(metrics_file_path, "w") as file:
-        #     file.write(f"MAE: {mae}\n")
-        #     file.write(f"RMSE: {rmse}\n")
-        # print(f"推論完成. MAE: {mae:.6f}, RMSE: {rmse:.6f}")
-
-parser = argparse.ArgumentParser()
-parser.add_argument('--dataset_name', type=str, default='benchpress', help='dataset name')
-parser.add_argument('--caption', type=str, default='Caption')
-parser.add_argument('--dataset_root', type=str, default='./Data', help='dataset root')
-parser.add_argument('--split_base_num', type=int, default=36)
-parser.add_argument('--batch_size', type=int, default=8)
-parser.add_argument('--num_training_updates', type=int, default=75000, help='number of training updates/epochs')
-parser.add_argument('--save_path', type=str, default='results/saved_pretrained_models/', help='denoiser model save path')
-parser.add_argument('--only_inference', type=bool, default=False)
-
-# Model-specific parameters
-parser.add_argument('--general_seed', type=int, default=41, help='seed for random number generation')
-parser.add_argument('--learning_rate', type=float, default=1e-3, help='learning rate for the optimizer')
-parser.add_argument('--block_hidden_size', type=int, default=128, help='hidden size of the blocks in the network')
-parser.add_argument('--num_residual_layers', type=int, default=2, help='number of residual layers in the model')
-parser.add_argument('--res_hidden_size', type=int, default=256, help='hidden size of the residual layers')
-parser.add_argument('--embedding_dim', type=int, default=64, help='dimension of the embeddings')
-parser.add_argument('--flow_dim', type=int, default=300, help='embedding dim flow into diffusion')
-parser.add_argument('--num_embeddings', type=int, default=128, help='number of embeddings in the VQ-VAE')
-parser.add_argument('--compression_factor', type=int, default=4, help='compression factor')
-parser.add_argument('--commitment_cost', type=float, default=0.25, help='commitment cost used in the loss function')
-args = parser.parse_args()
+        plot_comparison_animation(real_samples, reconstructed_samples, save_dir, fps=1)
+        plot_pca_tsne(real_samples, reconstructed_samples, save_dir)
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--dataset_name', type=str, default='benchpress', help='dataset name')
+    parser.add_argument('--caption', type=str, default='Caption_explain_no_barbell')
+    parser.add_argument('--dataset_root', type=str, default='./Data', help='dataset root')
+    parser.add_argument('--split_base_num', type=int, default=36)
+    parser.add_argument('--batch_size', type=int, default=16)
+    parser.add_argument('--num_training_updates', type=int, default=80000, help='number of training updates/epochs')
+    parser.add_argument('--save_path', type=str, default='results/saved_pretrained_models/', help='denoiser model save path')
+    parser.add_argument('--only_inference', type=bool, default=False)
+
+    # Model-specific parameters
+    parser.add_argument('--general_seed', type=int, default=41, help='seed for random number generation')
+    parser.add_argument('--learning_rate', type=float, default=1e-3, help='learning rate for the optimizer')
+    parser.add_argument('--block_hidden_size', type=int, default=128, help='hidden size of the blocks in the network')
+    parser.add_argument('--num_residual_layers', type=int, default=3, help='number of residual layers in the model')
+    parser.add_argument('--res_hidden_size', type=int, default=256, help='hidden size of the residual layers')
+    parser.add_argument('--embedding_dim', type=int, default=64, help='dimension of the embeddings')
+    parser.add_argument('--flow_dim', type=int, default=128, help='embedding dim flow into diffusion')
+    parser.add_argument('--num_embeddings', type=int, default=128, help='number of embeddings in the VQ-VAE')
+    parser.add_argument('--compression_factor', type=int, default=4, help='compression factor')
+    parser.add_argument('--commitment_cost', type=float, default=0.25, help='commitment cost used in the loss function')
+    args = parser.parse_args()
+    
     save_folder_name = '{}_{}_epoch{}'.format(args.split_base_num, args.dataset_name, args.num_training_updates)
     save_dir = os.path.join(args.save_path, save_folder_name)
     os.makedirs(save_dir, exist_ok=True)
@@ -279,7 +212,7 @@ if __name__ == '__main__':
     if not args.only_inference:
         total_epochs = int((args.num_training_updates / max(1, len(train_loader))) + 0.5)
         print(f'total epoch : {total_epochs}')
-
+        loss_list = []
         for epoch in range(total_epochs):
             model.train()
             epoch_losses = []
@@ -292,11 +225,13 @@ if __name__ == '__main__':
                 if len(group_losses) > 0:
                     epoch_losses.append(np.mean(group_losses))
             print(f"Epoch: {epoch+1}, Batch: {len(epoch_losses)}, Loss: {np.mean(group_losses):.6f}")
-
+            loss_list.append(np.mean(group_losses))
             # 週期性儲存
-            if total_epochs > 0 and (epoch % max(1, total_epochs // 10) == 0):
+            if epoch % max(1, total_epochs // 10) == 0:
+                plot_loss_curve(loss_list, save_dir, filename=f'loss_curve_epoch.png')
                 torch.save(model.state_dict(), os.path.join(save_dir, f'model_epoch_{epoch}.pth'))
                 print(f'Saved Model from epoch: {epoch}')
+
 
         torch.save(model.state_dict(), os.path.join(save_dir, 'final_model.pth'))
         print("Training complete.")

@@ -25,7 +25,7 @@ def process_clip(client: openai.OpenAI, clip_dir: str) -> None:
     with open(cap_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    text = data.get("Feature Interaction Summary", "")
+    text = data.get("Summary", "")
     data["embedding"] = get_embedding(client, text)
 
     with open(cap_path, "w", encoding="utf-8") as f:
@@ -56,7 +56,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--caption_data_path",
-        default="./Data/benchpress_Caption_with_feature_explanation",
+        default="./Data/benchpress/Caption_explain_no_barbell",
         help="subject 資料夾根路徑")
     args = parser.parse_args()
     main(args.caption_data_path)

@@ -26,7 +26,6 @@ class BenchpressT2SDataset(Dataset):
         super().__init__()
         with open(json_path, "r", encoding="utf-8") as f:
             all_data = json.load(f)
-
         self.records = []  # list of ((text, x[n_f,T], embedding[E]), dataset_idx)
         lengths = []
         max_len = 0
@@ -42,14 +41,16 @@ class BenchpressT2SDataset(Dataset):
                 caption_path = path.join(caption_root, subject, clip, 'caption.json')
                 with open(caption_path, 'r', encoding="utf-8") as f:
                     data = json.load(f)
-                    text = data['Feature Interaction Summary']
+                    text = data['Summary']
                     embedding = data['embedding']
                     
                 # 收集同一個 clip 內所有特徵為 1D 時序 [T]
-                keys = sorted(feat_dict.keys())
+                keys = feat_dict.keys()
                 seqs_T = []
                 T_list = []
                 for k in keys:
+                    if k in ['feature_0', 'feature_1', 'feature_2']:
+                        continue
                     x = torch.as_tensor(feat_dict[k], dtype=torch.float32)  # [T] 或 [T, D_f]
                     if x.dim() == 1:
                         seqs_T.append(x)
@@ -60,7 +61,7 @@ class BenchpressT2SDataset(Dataset):
                 # 同 clip 內時間長度一致性檢查
                 if len(set(T_list)) != 1:
                     detail = ", ".join([f"{kk}:{ll}" for kk, ll in zip(keys, T_list)])
-                    print(f"Inconsistent time length (subject={subject}, clip={clip}): {detail}")
+                    # print(f"Inconsistent time length (subject={subject}, clip={clip}): {detail}")
                     continue
                 
                 # 更新最小和最大長度
@@ -94,7 +95,7 @@ class BenchpressT2SDataset(Dataset):
                 elif not torch.is_tensor(embedding):
                     embedding = torch.as_tensor(embedding, dtype=torch.float32)
 
-                self.records.append((text, x_nfT, embedding, gt_cat))
+                self.records.append((text, x_nfT, embedding))
     
     def _map_target_len(self, T: int, target_T):
         if target_T == 36:

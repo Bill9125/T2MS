@@ -265,49 +265,50 @@ def evaluate_data(args, ori_data, gen_data):
 
     return result
 
-parser = argparse.ArgumentParser(description="Train flow matching model")
-parser.add_argument('--method_list', type=str, default='MSE,WAPE,MRR',
-                        help='metric list [MSE,WAPE,MRR]')
-parser.add_argument('--save_path', type=str, default='./results/denoiser_results', help='Denoiser Model save path')
-parser.add_argument('--dataset_name', type=str, default='ETTh1_96', help='dataset name')
-parser.add_argument('--backbone', type=str, default='flowmatching', help='flowmatching or DDPM or EDM')
-parser.add_argument('--denoiser', type=str, default='DiT', help='DiT or MLP')
-# parser.add_argument('--data_length', type=int, default=96, help='24 48 96')
-parser.add_argument('--cfg_scale', type=float, default=9.0, help='CFG Scale')
-parser.add_argument('--total_step', type=int, default=10, help='total step sampled from [0,1]')
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="Train flow matching model")
+    parser.add_argument('--method_list', type=str, default='MSE,WAPE,MRR',
+                            help='metric list [MSE,WAPE,MRR]')
+    parser.add_argument('--save_path', type=str, default='./results/denoiser_results', help='Denoiser Model save path')
+    parser.add_argument('--dataset_name', type=str, default='ETTh1_96', help='dataset name')
+    parser.add_argument('--backbone', type=str, default='flowmatching', help='flowmatching or DDPM or EDM')
+    parser.add_argument('--denoiser', type=str, default='DiT', help='DiT or MLP')
+    # parser.add_argument('--data_length', type=int, default=96, help='24 48 96')
+    parser.add_argument('--cfg_scale', type=float, default=9.0, help='CFG Scale')
+    parser.add_argument('--total_step', type=int, default=10, help='total step sampled from [0,1]')
 
-args = parser.parse_args()
-args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-args.data_length = args.dataset_name.split('_')[-1] if args.dataset_name != 'SUSHI' else 2048
-args.model_name = '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name,args.cfg_scale, args.total_step)
-# args.generation_save_path = os.path.join(args.save_path, 'generation', '{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name))
-args.generation_save_path = os.path.join(args.save_path, 'generation',
-                                         '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name,
-                                                                 args.cfg_scale, args.total_step))
-args.evaluation_save_path = os.path.join(args.save_path, 'evaluation', args.model_name)
+    args = parser.parse_args()
+    args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    args.data_length = args.dataset_name.split('_')[-1] if args.dataset_name != 'SUSHI' else 2048
+    args.model_name = '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name,args.cfg_scale, args.total_step)
+    # args.generation_save_path = os.path.join(args.save_path, 'generation', '{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name))
+    args.generation_save_path = os.path.join(args.save_path, 'generation',
+                                            '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name,
+                                                                    args.cfg_scale, args.total_step))
+    args.evaluation_save_path = os.path.join(args.save_path, 'evaluation', args.model_name)
 
 
-'''evaluate our model'''
-x_1 = np.load(os.path.join(args.generation_save_path,'run_0','x_1.npy'))
-x_t = np.load(os.path.join(args.generation_save_path, 'x_t.npy'))
-x_t_latent_dec_array = np.load(os.path.join(args.generation_save_path,'run_0','x_t_latent_dec_array.npy'))
-x_t_latent_enc_array = np.load(os.path.join(args.generation_save_path, 'run_0','x_t_latent_enc_array.npy'))
-x_1 = np.transpose(x_1, (0, 2, 1))
-x_t = np.transpose(x_t, (0, 2, 1))
-# print(f'x_1 shape:{x_1.shape}')
-# print(f'x_t shape:{x_t.shape}')
-evaluate_data(args, ori_data=x_1, gen_data=x_t)  # batch, dim , time length
+    '''evaluate our model'''
+    x_1 = np.load(os.path.join(args.generation_save_path,'run_0','x_1.npy'))
+    x_t = np.load(os.path.join(args.generation_save_path, 'x_t.npy'))
+    x_t_latent_dec_array = np.load(os.path.join(args.generation_save_path,'run_0','x_t_latent_dec_array.npy'))
+    x_t_latent_enc_array = np.load(os.path.join(args.generation_save_path, 'run_0','x_t_latent_enc_array.npy'))
+    x_1 = np.transpose(x_1, (0, 2, 1))
+    x_t = np.transpose(x_t, (0, 2, 1))
+    # print(f'x_1 shape:{x_1.shape}')
+    # print(f'x_t shape:{x_t.shape}')
+    evaluate_data(args, ori_data=x_1, gen_data=x_t)  # batch, dim , time length
 
-therehold = 0.5
-all_x_t = []
-for run_index in range(10):
-    '''Choice 1 : evaluate our model'''
-    args.generation_save_path_result = os.path.join(args.generation_save_path, f'run_{run_index}')
-    x_1 = np.load(os.path.join(args.generation_save_path_result, 'x_1.npy'))
-    x_t = np.load(os.path.join(args.generation_save_path_result, 'x_t.npy'))
+    therehold = 0.5
+    all_x_t = []
+    for run_index in range(10):
+        '''Choice 1 : evaluate our model'''
+        args.generation_save_path_result = os.path.join(args.generation_save_path, f'run_{run_index}')
+        x_1 = np.load(os.path.join(args.generation_save_path_result, 'x_1.npy'))
+        x_t = np.load(os.path.join(args.generation_save_path_result, 'x_t.npy'))
 
-    x_t_expanded = np.expand_dims(x_t, axis=-1)
-    all_x_t.append(x_t_expanded)
+        x_t_expanded = np.expand_dims(x_t, axis=-1)
+        all_x_t.append(x_t_expanded)
 
-x_t_all = np.concatenate(all_x_t, axis=-1)
-evaluate_muldata(args, ori_data=x_1, gen_data=x_t_all)
+    x_t_all = np.concatenate(all_x_t, axis=-1)
+    evaluate_muldata(args, ori_data=x_1, gen_data=x_t_all)
