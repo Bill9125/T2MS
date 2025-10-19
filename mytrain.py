@@ -11,6 +11,8 @@ from model.pretrained.myvqvae import vqvae
 from tqdm import tqdm
 from utils import plot_loss_curve, seed_everything
 import numpy as np
+from utils import get_cfg
+
 def train(args):
     print(f"Training config::\tepoch: {args.epochs}\tsave_path: {args.save_path}\tdevice: {args.device}")
     os.makedirs(args.save_path, exist_ok=True)
@@ -96,30 +98,19 @@ def train(args):
 def get_args():
     parser = argparse.ArgumentParser(description="Train T2S model")
     parser.add_argument('--checkpoint_path', type=str, help='checkpoint path')
-    parser.add_argument('--dataset_root', type=str, default='./Data', help='dataset root')
     parser.add_argument('--dataset_name', type=str, default='benchpress', help='dataset name')
-    parser.add_argument('--caption', type=str, default='Caption_explain_no_barbell')
     parser.add_argument('--pretrained_model_path', type=str, default='./results/saved_pretrained_models/36_benchpress_epoch80000/final_model.pth')
     parser.add_argument('--batch_size', type=int, default=512, help='batch_size')
     parser.add_argument('--epochs', type=int, default=20000, help='training epochs')
     parser.add_argument('--save_path', type=str, default='./results/denoiser_results', help='denoiser model save path')
-    parser.add_argument('--split_base_num', type=int, default=36)
 
     # model specific
     parser.add_argument('--general_seed', type=int, default=2025, help='seed for random number generation')
     parser.add_argument('--usepretrainedvae', default=True, help='pretrained vae')
     parser.add_argument('--total_step', type=int, default=100, help='sampling from [0,1]')
-    parser.add_argument('--backbone', type=str, default='flowmatching', help='flowmatching or ddpm or edm')
-    parser.add_argument('--denoiser',type=str, default='DiT', help='DiT or MLP')
-
-    # vae specific
-    parser.add_argument('--block_hidden_size', type=int, default=128, help='hidden size of the blocks in the network')
-    parser.add_argument('--num_residual_layers', type=int, default=3, help='number of residual layers in the model')
-    parser.add_argument('--res_hidden_size', type=int, default=256, help='hidden size of the residual layers')
-    parser.add_argument('--embedding_dim', type=int, default=64, help='dimension of the embeddings')
-    parser.add_argument('--flow_dim', type=int, default=128, help='embedding dim flow into diffusion')
-
+    parser.add_argument('--config', type=str, default='config.yaml', help='model configuration')
     args = parser.parse_args()
+    args = get_cfg(args)
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
     args.save_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, '80000'))
     return args

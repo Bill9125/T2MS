@@ -1,0 +1,21 @@
+dataset_root: ./Data
+general_seed: 2025
+benchpress:
+  flow_dim: 128 # embedding dim flow into/in diffusion
+  dataset: 
+    split_base_num: 36
+    caption: Caption_explain_no_barbell
+  vae: 
+    block_hidden_size: 128 # hidden size of the blocks in the network
+    num_residual_layers: 3 # number of residual layers in the model
+    res_hidden_size: 256 # hidden size of the residual layers
+    embedding_dim: 64 # dimension of the embeddings
+
+  diffusion: 
+    denoiser: DiT
+    backbone: flowmatching
+
+deadlift:
+  dataset: 
+  vae: 
+  denoiser: 

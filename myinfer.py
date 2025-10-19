@@ -13,6 +13,7 @@ import numpy as np
 import math
 from pretrained_mylavae import plot_pca_tsne
 import json
+from utils import get_cfg
 
 def calculate_mse(ori_data, gen_data):
     mse_values = []
@@ -162,48 +163,39 @@ def infer(args):
             print(f'Batch {batch} MSE: {mse}')
             x_1_list.append(x_1)
             x_t_list.append(x_t)
-            if batch == 3:
+            if batch == 0:
                 break
     return x_1_list, x_t_list, None, None, x_infer_list, y_list, frames, mse_list
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Inference flow matching model")
-    # vae specific
-    parser.add_argument('--block_hidden_size', type=int, default=128, help='hidden size of the blocks in the network')
-    parser.add_argument('--num_residual_layers', type=int, default=3, help='number of residual layers in the model')
-    parser.add_argument('--res_hidden_size', type=int, default=256, help='hidden size of the residual layers')
-    parser.add_argument('--embedding_dim', type=int, default=64, help='dimension of the embeddings')
-    parser.add_argument('--flow_dim', type=int, default=128, help='embedding dim flow into diffusion')
-    
+    parser.add_argument('--config', type=str, default='config.yaml', help='model configuration')
     parser.add_argument('--batch_size', type=int, default=1, help='batch size')
     parser.add_argument('--save_path', type=str, default='./results/denoiser_results', help='Denoiser Model save path')
     parser.add_argument('--pretrainedvae_path', default='./results/saved_pretrained_models/36_benchpress_epoch80000/final_model.pth', help='pretrained vae')
-    parser.add_argument('--backbone', type=str, default='flowmatching', help='flowmatching or DDPM or EDM')
-    parser.add_argument('--denoiser', type=str, default='DiT', help='DiT or MLP')
-    parser.add_argument('--cfg_scale', type=int, default=5, help='CFG Scale')
+    parser.add_argument('--cfg_scale', type=int, default=3, help='CFG Scale')
     parser.add_argument('--total_step', type=int, default=100, help='total step sampled from [0,1]')
-    parser.add_argument('--general_seed', type=int, default=2025, help='seed for random number generation')
 
     # for inference
-    parser.add_argument('--checkpoint_id', type=int, default=4600,help='model id')
-    parser.add_argument('--dataset_root', type=str, default='./Data', help='dataset root')
+    parser.add_argument('--checkpoint_id', type=int, default=900,help='model id')
     parser.add_argument('--dataset_name', type=str, default='benchpress', help='dataset name')
-    parser.add_argument('--caption', type=str, default='Caption_explain_no_barbell')
-    parser.add_argument('--split_base_num', type=int, default=36)
-    parser.add_argument('--run_time', type=int, default=5)
+    parser.add_argument('--run_time', type=int, default=10, help='inference run time')
     args = parser.parse_args()
+    args = get_cfg(args)
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model_root_path = args.dataset_name.split('_')[0]
     args.checkpoint_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, model_root_path, args.caption, '80000'), 'model_{}.pth'.format(args.checkpoint_id))
     args.generation_save_path = os.path.join(args.save_path, 'generation', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name,args.cfg_scale,args.total_step))
 
-    best_x_1_path = os.path.join(args.generation_save_path, 'x_1_best.npy')
-    best_x_t_path = os.path.join(args.generation_save_path, 'x_t_best.npy')
+    x_t_path = os.path.join(args.generation_save_path, 'x_t.npy')
     best_result = {}
     for i in range(args.run_time):
         args.generation_save_path_result = os.path.join(args.generation_save_path, f'run_{i}')
+        x_1_path = os.path.join(args.generation_save_path_result, 'x_1.npy')
         os.makedirs(args.generation_save_path_result, exist_ok=True)
         x_1, x_t, _, _, x_infer_list, y_list, frames_list, mse_list = infer(args)
+        np.save(x_1_path, x_1)
         plot_side_by_side_comparison(x_1, x_t, mse_list, args.generation_save_path_result )
-        plot_pca_tsne(x_1, x_t, args.generation_save_path_result)
+        # plot_pca_tsne(x_1, x_t, args.generation_save_path_result)
         # save_diffusion_gif(frames_list, args.generation_save_path, filename=f'diffusion.gif')
+    np.save(x_t_path, x_t)

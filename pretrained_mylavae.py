@@ -1,7 +1,6 @@
 import argparse
 import numpy as np
 import os
-import random
 import torch
 from model.pretrained.myvqvae import vqvae
 import matplotlib.pyplot as plt
@@ -13,7 +12,7 @@ from datafactory.benchpress_dataloader import loader_provider
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-from utils import seed_everything, plot_loss_curve
+from utils import seed_everything, plot_loss_curve, get_cfg
 
 def plot_comparison_animation(real, recon, save_dir, gif_name='comparison.gif', fps=2):
     """
@@ -175,27 +174,18 @@ def inference(model, test_loader, device, save_dir, num_samples=None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset_name', type=str, default='benchpress', help='dataset name')
-    parser.add_argument('--caption', type=str, default='Caption_explain_no_barbell')
-    parser.add_argument('--dataset_root', type=str, default='./Data', help='dataset root')
-    parser.add_argument('--split_base_num', type=int, default=36)
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--num_training_updates', type=int, default=80000, help='number of training updates/epochs')
     parser.add_argument('--save_path', type=str, default='results/saved_pretrained_models/', help='denoiser model save path')
     parser.add_argument('--only_inference', type=bool, default=False)
 
     # Model-specific parameters
-    parser.add_argument('--general_seed', type=int, default=41, help='seed for random number generation')
     parser.add_argument('--learning_rate', type=float, default=1e-3, help='learning rate for the optimizer')
-    parser.add_argument('--block_hidden_size', type=int, default=128, help='hidden size of the blocks in the network')
-    parser.add_argument('--num_residual_layers', type=int, default=3, help='number of residual layers in the model')
-    parser.add_argument('--res_hidden_size', type=int, default=256, help='hidden size of the residual layers')
-    parser.add_argument('--embedding_dim', type=int, default=64, help='dimension of the embeddings')
-    parser.add_argument('--flow_dim', type=int, default=128, help='embedding dim flow into diffusion')
-    parser.add_argument('--num_embeddings', type=int, default=128, help='number of embeddings in the VQ-VAE')
+    parser.add_argument('--config', type=str, default='config.yaml', help='model configuration')
     parser.add_argument('--compression_factor', type=int, default=4, help='compression factor')
     parser.add_argument('--commitment_cost', type=float, default=0.25, help='commitment cost used in the loss function')
-    args = parser.parse_args()
-    
+    args = get_cfg(parser.parse_args())
+
     save_folder_name = '{}_{}_epoch{}'.format(args.split_base_num, args.dataset_name, args.num_training_updates)
     save_dir = os.path.join(args.save_path, save_folder_name)
     os.makedirs(save_dir, exist_ok=True)
@@ -206,8 +196,8 @@ if __name__ == '__main__':
     model = vqvae(args).to(device)
     optimizer = model.configure_optimizers(lr=args.learning_rate)
 
-    # 取得 train/valid/test 的 DataLoader（內含自訂 collate_fn，會回傳分組子批次 list）
-    train_loader, valid_loader, test_loader = loader_provider(args)
+    # 取得 train/test 的 DataLoader（內含自訂 collate_fn，會回傳分組子批次 list）
+    train_loader, test_loader = loader_provider(args)
 
     if not args.only_inference:
         total_epochs = int((args.num_training_updates / max(1, len(train_loader))) + 0.5)
