@@ -1,3 +1,4 @@
+from itertools import count
 import os
 import datetime
 import numpy as np
@@ -15,11 +16,21 @@ import torch
 from scipy.stats import norm
 from utils import get_cfg
 
+def normalize(x):
+    # 沿每一列(axis=1)計算最小和最大值，keepdims=True 保持維度方便廣播
+    min_val = x.min(axis=1, keepdims=True)
+    max_val = x.max(axis=1, keepdims=True)
+    # 計算縮放後的結果
+    x_norm = (x - min_val) / (max_val - min_val + 1e-8)  # 加 epsilon 避免除零錯誤
+    return x_norm
+
+
 ###################################################
 #                    MRR                          #
 ###################################################
 
 def calculate_mrr(ori_data, gen_data, k=None):
+    threshold = 0.5
     n_batch_size = ori_data.shape[0]
     n_generations = gen_data.shape[3]
     k = n_generations if k is None else k
@@ -37,7 +48,7 @@ def calculate_mrr(ori_data, gen_data, k=None):
         sorted_indices = np.argsort(similarities)[::-1]
         rank = None
         for idx in sorted_indices:
-            if similarities[idx] > therehold:
+            if similarities[idx] > threshold:
                 rank = idx + 1
                 break
 
@@ -177,7 +188,6 @@ def calculate_mse(ori_data, gen_data):
     average_mse = mse_values.mean()
     return average_mse
 
-
 def calculate_wape(ori_data, gen_data):
     n_samples = ori_data.shape[0]
     n_series = ori_data.shape[2]
@@ -205,19 +215,12 @@ def calculate_wape(ori_data, gen_data):
 
 
 
-def evaluate_data(args, ori_data, gen_data):
+def evaluate_data(args, ori_data, gen_data, index, result):
     show_with_start_divider(f"Evalution with settings:{args}")
 
     # Parse configs
     method_list = args.method_list
-    dataset_name = args.dataset_name
-    model_name = args.model_name
     device = args.device
-    evaluation_save_path = args.evaluation_save_path
-
-    now = datetime.datetime.now()
-    formatted_time = now.strftime("%Y%m%d-%H%M%S")
-    combined_name = f'{model_name}_{dataset_name}_{formatted_time}'
 
     if not isinstance(method_list,list):
         method_list = method_list.strip('[]')
@@ -230,81 +233,96 @@ def evaluate_data(args, ori_data, gen_data):
         print(f'Original data shape: {ori_data.shape}, Generated data shape: {gen_data.shape}.')
         show_with_end_divider('Error: Generated data does not have the same shape with original data.')
         return None
-    
-    result = {}
 
+    result[index] = {}
     if 'C-FID' in method_list:
         fid_model = initialize_ts2vec(np.transpose(ori_data, (0, 2, 1)),device)
         ori_repr = fid_model.encode(np.transpose(ori_data,(0, 2, 1)), encoding_window='full_series')
         gen_repr = fid_model.encode(np.transpose(gen_data,(0, 2, 1)), encoding_window='full_series')
         cfid = calculate_fid(ori_repr,gen_repr)
-        result['C-FID'] = cfid
-
-    ori_data = np.transpose(ori_data, (0, 2, 1))
-    gen_data = np.transpose(gen_data, (0, 2, 1))
+        result[index]['C-FID'] = cfid
 
     if 'MSE' in method_list:
         mse = calculate_mse(ori_data,gen_data)
-        result['MSE'] = mse
+        result[index]['MSE'] = mse
     if 'WAPE' in method_list:
         wape = calculate_wape(ori_data,gen_data)
-        result['WAPE'] = wape
+        result[index]['WAPE'] = wape
+    if 'MRR' in method_list:
+        mrr = calculate_mrr(ori_data,gen_data)
+        result[index]['MRR'] = mrr
+    if 'CRPS' in method_list:
+        crps = calculate_crps(ori_data,gen_data)
+        result[index]['CRPS'] = crps
+    if 'ED' in method_list:
+        ed = calculate_ed(ori_data,gen_data)
+        result[index]['ED'] = ed
+    if 'ACD' in method_list:
+        acd = calculate_acd(ori_data,gen_data)
+        result[index]['ACD'] = acd
+    if 'SD' in method_list:
+        sd = calculate_sd(ori_data,gen_data)
+        result[index]['SD'] = sd
+    if 'KD' in method_list:
+        kd = calculate_kd(ori_data,gen_data)
+        result[index]['KD'] = kd
     if 'DTW' in method_list:
         dtw = calculate_dtw(ori_data,gen_data)
-        result['DTW'] = dtw
-
-    ori_data = np.transpose(ori_data, (0, 2, 1))
-    gen_data = np.transpose(gen_data, (0, 2, 1))
-
-    if isinstance(result, dict):
-        evaluation_save_path = os.path.join(evaluation_save_path, f'{combined_name}.json')
-        write_json_data(result, evaluation_save_path)
-        print(f'Evaluation denoiser_results saved to {evaluation_save_path}.')
-    
-    show_with_end_divider(f'Evaluation done. Results:{result}.')
+        result[index]['DTW'] = dtw
 
     return result
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Train flow matching model")
-    parser.add_argument('--method_list', type=str, default='MSE,WAPE,MRR,CRPS,ED,DTW',
-                            help='metric list [MSE,WAPE,MRR,CRPS,C-FID,ED,DTW]')
+    parser.add_argument('--method_list', type=str, default='MSE,WAPE,MRR,DTW',
+                            help='metric list [MSE,WAPE,MRR,CRPS,C-FID,ED,ACD,SD,KD,DTW]')
     parser.add_argument('--save_path', type=str, default='./results/denoiser_results', help='Denoiser Model save path')
     parser.add_argument('--config', type=str, default='config.yaml', help='model configuration')
     parser.add_argument('--dataset_name', type=str, default='benchpress', help='dataset name')
     parser.add_argument('--cfg_scale', type=float, default=3, help='CFG Scale')
     parser.add_argument('--total_step', type=int, default=100, help='total step sampled from [0,1]')
+    parser.add_argument('--run_time', type=int, default=10, help='total run time')
 
     args = parser.parse_args()
     args = get_cfg(args)
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
     args.model_name = '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name,args.cfg_scale, args.total_step)
-    # args.generation_save_path = os.path.join(args.save_path, 'generation', '{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name))
     args.generation_save_path = os.path.join(args.save_path, 'generation',
                                             '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name,
                                                                     args.cfg_scale, args.total_step))
     args.evaluation_save_path = os.path.join(args.save_path, 'evaluation', args.model_name)
 
-
+    result = {}
     '''evaluate our model'''
-    x_1 = np.load(os.path.join(args.generation_save_path,'run_0','x_1.npy'))
-    x_t = np.load(os.path.join(args.generation_save_path, 'x_t.npy'))
-    x_1 = np.transpose(x_1, (0, 2, 1))
-    x_t = np.transpose(x_t, (0, 2, 1))
-    # print(f'x_1 shape:{x_1.shape}')
-    # print(f'x_t shape:{x_t.shape}')
-    evaluate_data(args, ori_data=x_1, gen_data=x_t)  # batch, dim , time length
+    for sample in range(10):
+        x_1_list = []
+        x_t_list = []
+        for j in range(args.run_time):
+            args.generation_save_path_result = os.path.join(args.generation_save_path, f'run_{j}')
+            print(os.path.join(args.generation_save_path_result, f'x_t_sample_{sample}.npy'))
+            x_t = np.load(os.path.join(args.generation_save_path_result, f'x_t_sample_{sample}.npy'))
+            x_1 = np.load(os.path.join(args.generation_save_path, f'x_1_sample_{sample}.npy'))
+            x_t = normalize(x_t)
+            x_1 = normalize(x_1)
+            x_t_list.append(x_t)
+            x_1_list.append(x_1)
 
-    # therehold = 0.5
-    # all_x_t = []
-    # for run_index in range(10):
-    #     '''Choice 1 : evaluate our model'''
-    #     args.generation_save_path_result = os.path.join(args.generation_save_path, f'run_{run_index}')
-    #     x_1 = np.load(os.path.join(args.generation_save_path_result, 'x_1.npy'))
-    #     x_t = np.load(os.path.join(args.generation_save_path_result, 'x_t.npy'))
-
-    #     x_t_expanded = np.expand_dims(x_t, axis=-1)
-    #     all_x_t.append(x_t_expanded)
-
-    # x_t_all = np.concatenate(all_x_t, axis=-1)
-    # evaluate_muldata(args, ori_data=x_1, gen_data=x_t_all)
+        print(f'ori_data shape:{np.array(x_t_list).shape}, gen_data shape:{np.array(x_1_list).shape}')
+        result = evaluate_data(args, np.array(x_t_list), np.array(x_1_list), sample, result)  # batch, dim , time length
+    
+    if isinstance(result, dict):
+        summary = {}
+        for key in result:
+            for metric, value in result[key].items():
+                summary[metric] = summary.get(metric, 0) + value
+        for metric in summary:
+            summary[metric] /= len(result)
+        result['summary'] = summary
+        now = datetime.datetime.now()
+        formatted_time = now.strftime("%Y%m%d-%H%M%S")
+        combined_name = f'{args.model_name}_{args.dataset_name}_{formatted_time}'
+        evaluation_save_path = os.path.join(args.evaluation_save_path, f'{combined_name}.json')
+        write_json_data(result, evaluation_save_path)
+        print(f'Evaluation denoiser_results saved to {evaluation_save_path}.')
+    
+    show_with_end_divider(f'Evaluation done. Results:{result}.')

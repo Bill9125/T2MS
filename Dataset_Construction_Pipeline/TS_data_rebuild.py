@@ -5,7 +5,7 @@ Merge all vision skeleton data into one file for caption generation.
 """
 import os.path as path
 import argparse, glob
-from utils import merge_files, data_check
+from .utils import merge_files, data_check
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -17,8 +17,7 @@ if __name__ == "__main__":
     if args.sport == 'deadlift':
         class_dir = glob.glob(path.join(args.data_path, '*'))
         class_dir = [p for p in class_dir if path.isdir(p)]
-        lengths = merge_files(class_dir, args.output_root, args.multierror)
-        data_check(lengths, args.output_root)
+        
     elif args.sport == 'benchpress':
         class_dir = glob.glob(path.join(args.data_path, '*'))
         class_dir = [p for p in class_dir if path.isdir(p)]

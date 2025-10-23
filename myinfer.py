@@ -14,13 +14,7 @@ import math
 from pretrained_mylavae import plot_pca_tsne
 import json
 from utils import get_cfg
-
-def calculate_mse(ori_data, gen_data):
-    mse_values = []
-    for i in range(ori_data.shape[0]):
-        mse = np.mean((ori_data[i] - gen_data[i]) ** 2)
-        mse_values.append(mse)
-    return np.mean(mse_values)
+from myevaluation import calculate_mse, normalize
 
 def save_diffusion_gif(frames, save_path, filename='diffusion.gif'):
     gif_path = os.path.join(save_path, filename)
@@ -99,10 +93,7 @@ def infer(args):
     x_t_list = []
     y_list = []
     mse_list = []
-    frames = []
     frames_list = []
-    x_t_latent_enc_list = []
-    x_t_latent_dec_list = []
     x_infer_list = []
     with (torch.no_grad()):
         for batch, data in enumerate(test_loader):
@@ -140,7 +131,7 @@ def infer(args):
                 if (j % 100 == 0) or (j == step - 1):
                     xt_decode, _ = pretrained_model.decoder(x_t, length=x_1.shape[-1])
                     xt_decode_np = xt_decode.detach().cpu().numpy().squeeze()
-                    frames.append(xt_decode_np.copy())
+                    frames_list.append(xt_decode_np.copy())
                 x_t_latent_dec = x_t.clone()
             
             x_t, after = pretrained_model.decoder(x_t, length=x_1.shape[-1])
@@ -157,15 +148,17 @@ def infer(args):
             with open(json_path, 'w') as f:
                 json.dump(features, f, indent=4)
             print(f'Features saved to {json_path}')
-            
-            mse = calculate_mse(x_1, x_t)
+
+            mse = calculate_mse(np.expand_dims(normalize(x_1), 0), np.expand_dims(normalize(x_t), 0))
             mse_list.append(mse)
             print(f'Batch {batch} MSE: {mse}')
+            np.save(os.path.join(args.generation_save_path, f'x_1_sample_{batch}.npy'), x_1)
+            np.save(os.path.join(args.generation_save_path_result, f'x_t_sample_{batch}.npy'), x_t)
             x_1_list.append(x_1)
             x_t_list.append(x_t)
-            if batch == 0:
+            if batch == 9:
                 break
-    return x_1_list, x_t_list, None, None, x_infer_list, y_list, frames, mse_list
+    return x_1_list, x_t_list, x_infer_list, y_list, frames_list, mse_list
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Inference flow matching model")
@@ -177,7 +170,7 @@ if __name__ == '__main__':
     parser.add_argument('--total_step', type=int, default=100, help='total step sampled from [0,1]')
 
     # for inference
-    parser.add_argument('--checkpoint_id', type=int, default=900,help='model id')
+    parser.add_argument('--checkpoint_id', type=int, default=5000,help='model id')
     parser.add_argument('--dataset_name', type=str, default='benchpress', help='dataset name')
     parser.add_argument('--run_time', type=int, default=10, help='inference run time')
     args = parser.parse_args()
@@ -187,15 +180,12 @@ if __name__ == '__main__':
     args.checkpoint_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, model_root_path, args.caption, '80000'), 'model_{}.pth'.format(args.checkpoint_id))
     args.generation_save_path = os.path.join(args.save_path, 'generation', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name,args.cfg_scale,args.total_step))
 
-    x_t_path = os.path.join(args.generation_save_path, 'x_t.npy')
     best_result = {}
     for i in range(args.run_time):
         args.generation_save_path_result = os.path.join(args.generation_save_path, f'run_{i}')
-        x_1_path = os.path.join(args.generation_save_path_result, 'x_1.npy')
+        x_t_path = os.path.join(args.generation_save_path_result, 'x_t.npy')
         os.makedirs(args.generation_save_path_result, exist_ok=True)
-        x_1, x_t, _, _, x_infer_list, y_list, frames_list, mse_list = infer(args)
-        np.save(x_1_path, x_1)
-        plot_side_by_side_comparison(x_1, x_t, mse_list, args.generation_save_path_result )
-        # plot_pca_tsne(x_1, x_t, args.generation_save_path_result)
+        x_1_list, x_t_list, x_infer_list, y_list, frames_list, mse_list = infer(args)
+        plot_side_by_side_comparison(x_1_list, x_t_list, mse_list, args.generation_save_path_result)
+        plot_pca_tsne(x_1_list, x_t_list, args.generation_save_path_result)
         # save_diffusion_gif(frames_list, args.generation_save_path, filename=f'diffusion.gif')
-    np.save(x_t_path, x_t)

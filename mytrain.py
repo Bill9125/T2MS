@@ -92,7 +92,7 @@ def train(args):
             save_dict = dict(model=model.state_dict(), optimizer=optimizer.state_dict(), epoch=epoch, loss_list=loss_list)
             torch.save(save_dict, os.path.join(args.save_path, f'model_{epoch}.pth'))
 
-        if epoch == 5000:
+        if epoch == 7000:
             break
 
 def get_args():
