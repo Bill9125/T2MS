@@ -38,13 +38,13 @@ def seed_everything(seed, cudnn_deterministic=False):
 def get_cfg(args):
     with open(args.config, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
-        print(f"Loaded config from {args.config}: {config}")
         args.dataset_root = config.get('dataset_root', './Data')
         args.general_seed = config.get('general_seed', 2025)
         
         cfg = config[args.dataset_name]
+        args.features = [feature[0]["name"] for feature in cfg["features"].values()]
         args.flow_dim = cfg.get('flow_dim', 128)
-        
+        args.input_dim = cfg.get('input_dim', 10)
         args.split_base_num = cfg['dataset'].get('split_base_num', 36)
         args.caption = cfg['dataset'].get('caption', 'Caption_explain_no_barbell')
 

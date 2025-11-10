@@ -4,26 +4,14 @@ import openai
 import time
 import tiktoken
 from matplotlib import pyplot as plt
-import os.path as path
+import yaml
 import os
 import re
 import textwrap
+import os.path as path
 from dotenv import load_dotenv
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
-feature_list = {'feature_0': 'bar_x', 'feature_1': 'bar_y', 'feature_2': 'barx/bar_y', 'feature_3': 'left_shoulder_y',
-            'feature_4': 'right_shoulder_y', 'feature_5': 'left_dist', 'feature_6': 'right_dist', 'feature_7': 'left_elbow',
-            'feature_8': 'left_shoulder', 'feature_9': 'right_elbow', 'feature_10': 'right_shoulder', 'feature_11': 'left_torso-arm',
-            'feature_12': 'right_torso-arm'}
-
-feature_explaination = {'feature_0': 'Horizontal x-axis coordinate of the barbell end in the image/frame (lateral-view).', 'feature_1': 'Vertical y-axis coordinate of the barbell end in the image/frame (lateral-view).',
-                        'feature_2': 'Ratio of bar end coordinates, bar_x divided by bar_y; dimensionless.', 'feature_3': 'Vertical y-axis coordinate of the left shoulder in the rear (head-back) view.',
-                        'feature_4': 'Vertical y-axis coordinate of the right shoulder in the rear (head-back) view.', 'feature_5': 'Perpendicular distance from the wrist to the extended line connecting the two shoulder joints in the top-down view.',
-                        'feature_6': 'Perpendicular distance from the wrist to the extended line connecting the two shoulder joints in the top-down view.', 'feature_7': 'Elbow joint angle at the left side in the rear (head-back) view.',
-                        'feature_8': 'Shoulder joint angle at the left side in the rear (head-back) view, defined by connecting line between the two shoulder joints and upper arm.', 'feature_9': 'Elbow joint angle at the right side in the rear (head-back) view.',
-                        'feature_10': 'Shoulder joint angle at the right side in the rear (head-back) view, defined by connecting line between the two shoulder joints and upper arm.', 'feature_11': 'Angle at the left armpit between the torso axis and the left upper arm in the top-down view.',
-                        'feature_12': 'Angle at the right armpit between the torso axis and the right upper arm in the top-down view.'}
 
 def get_completion(user_prompt):
     completion = client.chat.completions.create(
@@ -87,18 +75,17 @@ def pairwise_summary(features):
         for i, f1 in enumerate(feature_names):
             for j, f2 in enumerate(feature_names[i+1:], start=i+1):
                 f1_data, f2_data = features[f1], features[f2]
-                
                 # 特徵與特徵文字描述 prompt
                 pair_prompt = f"""
                     You are given two time series features with their values and definitions:
                     
-                    {feature_list[f1]}
-                    Definition: {feature_explaination[f1]}  
+                    {f1}
+                    Definition: {feature_explaination[f1]}
                     Values: {list(f1_data)}
                     Max Value: {max(f1_data)}
                     Min Value: {min(f1_data)}
 
-                    {feature_list[f2]}  
+                    {f2}
                     Definition: {feature_explaination[f2]}  
                     Values: {list(f2_data)}  
                     Max Value: {max(f2_data)}  
@@ -137,7 +124,7 @@ def plot_data_to_picture(features, text, save_path):
         else:
             norm_feature = np.zeros_like(feature)  # 避免除以0
 
-        plt.plot(norm_feature, label=f'{feature_name}:{feature_list[feature_name]}, min :{feature.min():.4f}, max :{feature.max():.4f}')  # 每條線自動不同顏色
+        plt.plot(norm_feature, label=f'{feature_name}, min :{feature.min():.4f}, max :{feature.max():.4f}')  # 每條線自動不同顏色
 
         
     # 自動換行：每 60 字符換一行
@@ -154,13 +141,24 @@ def plot_data_to_picture(features, text, save_path):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_path', type=str, default='./Data/benchpress/data.json')
-    parser.add_argument('--output_path', type=str, default='./Data/benchpress/Caption_explain_no_barbell')
+    parser.add_argument('--sport', type=str, choices=['benchpress', 'deadlift'])
+    parser.add_argument('--config', type=str, default='config.yaml')
     parser.add_argument('--max_retries', type=int, default=3)
     args = parser.parse_args()
+    args.data_path = f'./Data/{args.sport}/data.json'
+    args.output_path = f'./Data/{args.sport}/Caption_with_feature_explaination'
     load_dotenv()
     api_key = os.getenv("OPENAI_API_KEY")
     client = openai.OpenAI(api_key=api_key)
+    feature_list = {}
+    feature_explaination = {}
+    
+    with open(args.config, 'r') as f:
+        config = yaml.load(f, Loader=yaml.FullLoader)
+        f = config[args.sport]['features']
+        for id, [name, defn] in f.items():
+            feature_list[f'feature_{id}'] = name['name']
+            feature_explaination[f'{name["name"]}'] = defn['definition']
     
     with open(args.data_path, 'r') as f:
         data = json.load(f)
@@ -181,7 +179,7 @@ if __name__ == "__main__":
                         json.dump(caption, f, indent=4)
                     fig_path = path.join(save_dir, 'fig.jpg')
                     plot_data_to_picture(features, caption, fig_path)
-                    break
+                    break  # 成功後跳出重試迴圈 
                 
                 except Exception as e:
                     print(f"Error occurred: {e}. Retrying {retries + 1}/{args.max_retries}...")

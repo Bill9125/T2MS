@@ -4,7 +4,6 @@ from matplotlib import pyplot as plt
 from model.denoiser.mlp import MLP
 from model.denoiser.mytransformer import Transformer
 from model.pretrained.myvqvae import vqvae
-from datafactory.benchpress_dataloader import loader_provider
 from model.backbone.rectified_flow import RectifiedFlow
 from model.backbone.DDPM import DDPM
 import imageio
@@ -35,24 +34,25 @@ def save_diffusion_gif(frames, save_path, filename='diffusion.gif'):
     imageio.mimsave(gif_path, images, duration=0.5)  # 可調整 duration
     print(f'GIF saved to {gif_path}')
 
-def plot_side_by_side_comparison(x_1, x_t, mse_list, save_path):
+def plot_side_by_side_comparison(args, x_1, x_t, mse_list, subjects_list):
+    save_path = args.generation_save_path_result
     for i in range(len(x_1)):
         fig_path = os.path.join(save_path, f'sample_{i}.jpg')
         plt.clf()
         plt.figure(figsize=(12, 6))
-        plt.suptitle(f'Comparison {mse_list[i]:.4f}', fontsize=10)
+        plt.suptitle(f'{subjects_list[i]} {mse_list[i]:.4f}', fontsize=10)
 
         # 左圖：ground truth
         ax1 = plt.subplot(1, 2, 1)
         for j in range(len(x_1[i])):
-            ax1.plot(x_1[i][j], label=f"ground truth {j}")
+            ax1.plot(x_1[i][j], label=f"{args.features[j+2]}")
         ax1.set_title('Ground Truth')
         ax1.legend()
 
         # 右圖：generated
         ax2 = plt.subplot(1, 2, 2)
         for j in range(len(x_t[i])):
-            ax2.plot(x_t[i][j], label=f"generated {j}")
+            ax2.plot(x_t[i][j], label=f"{args.features[j+2]}")
         ax2.set_title('Generated')
         ax2.legend()
 
@@ -66,6 +66,10 @@ def infer(args):
     device = args.device
 
     print(f"Inference config::Step: {step}\t CFG Scale: {cfg_scale}")
+    if args.dataset_name == 'deadlift':
+        from datafactory.deadlift.dataloader import loader_provider
+    elif args.dataset_name == 'benchpress':
+        from datafactory.benchpress.dataloader import loader_provider
     _, test_loader = loader_provider(args, period='test')
     print('dataset length:', len(test_loader))
     vae = vqvae(args).to(device).float().eval()
@@ -95,12 +99,13 @@ def infer(args):
     mse_list = []
     frames_list = []
     x_infer_list = []
+    subjects_list = []
     with (torch.no_grad()):
         for batch, data in enumerate(test_loader):
-            features = {'left_shoulder_y': [], 'right_shoulder_y': [], 'left_dist': [], 'right_dist': [], 'left_elbow': [], 'left_shoulder': [], 'right_elbow': [], 'right_shoulder': [], 'left_torso-arm': [], 'right_torso-arm': []}
+            features = {feat : {} for feat in args.features[2:]}
             print(f'Generating {batch}th Batch TS...')
 
-            y, x_1, embedding = data
+            y, x_1, embedding, subject = data
             y_list.append(y)
             x_1 = x_1.float().to(device)
             embedding = embedding.float().to(device)
@@ -156,36 +161,36 @@ def infer(args):
             np.save(os.path.join(args.generation_save_path_result, f'x_t_sample_{batch}.npy'), x_t)
             x_1_list.append(x_1)
             x_t_list.append(x_t)
+            subjects_list.append(subject)
             if batch == 9:
                 break
-    return x_1_list, x_t_list, x_infer_list, y_list, frames_list, mse_list
+    return x_1_list, x_t_list, x_infer_list, y_list, frames_list, mse_list, subjects_list
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Inference flow matching model")
     parser.add_argument('--config', type=str, default='config.yaml', help='model configuration')
     parser.add_argument('--batch_size', type=int, default=1, help='batch size')
     parser.add_argument('--save_path', type=str, default='./results/denoiser_results', help='Denoiser Model save path')
-    parser.add_argument('--pretrainedvae_path', default='./results/saved_pretrained_models/36_benchpress_epoch80000/final_model.pth', help='pretrained vae')
+    parser.add_argument('--pretrainedvae_path', default='./results/saved_pretrained_models/48_deadlift_epoch10000/final_model.pth', help='pretrained vae')
     parser.add_argument('--cfg_scale', type=int, default=3, help='CFG Scale')
-    parser.add_argument('--total_step', type=int, default=100, help='total step sampled from [0,1]')
+    parser.add_argument('--total_step', type=int, default=200, help='total step sampled from [0,1]')
 
     # for inference
-    parser.add_argument('--checkpoint_id', type=int, default=5000,help='model id')
-    parser.add_argument('--dataset_name', type=str, default='benchpress', help='dataset name')
+    parser.add_argument('--checkpoint_id', type=int, default=3000,help='model id')
+    parser.add_argument('--dataset_name', type=str, choices=['deadlift', 'benchpress'], help='dataset name')
     parser.add_argument('--run_time', type=int, default=10, help='inference run time')
     args = parser.parse_args()
     args = get_cfg(args)
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model_root_path = args.dataset_name.split('_')[0]
-    args.checkpoint_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, model_root_path, args.caption, '80000'), 'model_{}.pth'.format(args.checkpoint_id))
-    args.generation_save_path = os.path.join(args.save_path, 'generation', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name,args.cfg_scale,args.total_step))
+    args.checkpoint_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, '10000'), 'model_{}.pth'.format(args.checkpoint_id))
+    args.generation_save_path = os.path.join(args.save_path, 'generation', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.cfg_scale,args.total_step))
 
     best_result = {}
     for i in range(args.run_time):
         args.generation_save_path_result = os.path.join(args.generation_save_path, f'run_{i}')
         x_t_path = os.path.join(args.generation_save_path_result, 'x_t.npy')
         os.makedirs(args.generation_save_path_result, exist_ok=True)
-        x_1_list, x_t_list, x_infer_list, y_list, frames_list, mse_list = infer(args)
-        plot_side_by_side_comparison(x_1_list, x_t_list, mse_list, args.generation_save_path_result)
+        x_1_list, x_t_list, x_infer_list, y_list, frames_list, mse_list, subjects_list = infer(args)
+        plot_side_by_side_comparison(args, x_1_list, x_t_list, mse_list,  subjects_list)
         plot_pca_tsne(x_1_list, x_t_list, args.generation_save_path_result)
         # save_diffusion_gif(frames_list, args.generation_save_path, filename=f'diffusion.gif')

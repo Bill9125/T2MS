@@ -8,7 +8,6 @@ import matplotlib.animation as animation
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 import seaborn as sns
-from datafactory.benchpress_dataloader import loader_provider
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
@@ -128,16 +127,6 @@ def plot_pca_tsne(real_samples, reconstructed_samples, save_path):
     os.makedirs(save_path, exist_ok=True)
     plt.savefig(f"{save_path}/pca_tsne.png")
     plt.close()
-    
-
-def any_length_evaluation(samples):
-    # 將不同 T 的樣本分桶並各自堆疊（若桶為空則回傳空陣列）。
-    buckets = {}
-    for x in samples:
-        T = x.shape[1] if x.ndim == 2 else x.shape[0]
-        buckets.setdefault(T, []).append(x)
-    stacked = {T: (np.concatenate(v, axis=0) if len(v) > 0 else np.array([])) for T, v in buckets.items()}
-    return stacked.get(36, np.array([])), stacked.get(72, np.array([])), stacked.get(144, np.array([]))
 
 def inference(model, test_loader, device, save_dir, num_samples=None):
     model.eval()
@@ -147,7 +136,7 @@ def inference(model, test_loader, device, save_dir, num_samples=None):
         seen_batches = 0
         for batch in test_loader:
             # batch 是 List[(texts, xs, embeddings, gt_cat)]，逐組處理
-            for (texts, xs, embeddings) in batch:
+            for (texts, xs, embeddings, _) in batch:
                 xs = xs.float().to(device)  # [B, n_f, T]
                 loss, recon_error, reconstructed, z = model.shared_eval(xs, None, mode='test')
                 
@@ -173,9 +162,9 @@ def inference(model, test_loader, device, save_dir, num_samples=None):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset_name', type=str, default='benchpress', help='dataset name')
+    parser.add_argument('--dataset_name', type=str, choices=['deadlift', 'benchpress'], help='dataset name')
     parser.add_argument('--batch_size', type=int, default=16)
-    parser.add_argument('--num_training_updates', type=int, default=80000, help='number of training updates/epochs')
+    parser.add_argument('--num_training_updates', type=int, default=10000, help='number of training updates/epochs')
     parser.add_argument('--save_path', type=str, default='results/saved_pretrained_models/', help='denoiser model save path')
     parser.add_argument('--only_inference', type=bool, default=False)
 
@@ -197,6 +186,10 @@ if __name__ == '__main__':
     optimizer = model.configure_optimizers(lr=args.learning_rate)
 
     # 取得 train/test 的 DataLoader（內含自訂 collate_fn，會回傳分組子批次 list）
+    if args.dataset_name == 'deadlift':
+        from datafactory.deadlift.dataloader import loader_provider
+    elif args.dataset_name == 'benchpress':
+        from datafactory.benchpress.dataloader import loader_provider
     train_loader, test_loader = loader_provider(args)
 
     if not args.only_inference:
@@ -208,7 +201,7 @@ if __name__ == '__main__':
             epoch_losses = []
             group_losses = []
             for batch in tqdm(train_loader, desc=f"Epoch {epoch+1}/{total_epochs}"):
-                for (texts, xs, embeddings) in batch:
+                for (texts, xs, embeddings, _) in batch:
                     xs = xs.clone().detach().float().to(device)  # [B_g, n_f, T]
                     loss, recon_error, x_recon, z = model.shared_eval(xs, optimizer, 'train')
                     group_losses.append(loss.item())

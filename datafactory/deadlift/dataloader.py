@@ -1,5 +1,5 @@
 from torch.utils.data import Dataset, DataLoader, random_split
-from datafactory.benchpress_dataset import BenchpressT2SDataset
+from .dataset import DeadliftT2SDataset
 import torch
 import numpy as np
 import os
@@ -31,34 +31,35 @@ def custom_collate_fn(batch):
     batches = []
     for idx, data_list in grouped_data.items():
         if data_list:
-            batch_texts, batch_xs, batch_embeddings = zip(*data_list)
+            batch_texts, batch_xs, batch_embeddings, subjects = zip(*data_list)
             batch_texts = [torch.from_numpy(text) if isinstance(text, np.ndarray) else text for text in batch_texts]
+            batch_subjects = [torch.from_numpy(subject) if isinstance(subject, np.ndarray) else subject for subject in subjects]
             batch_xs = torch.stack(
                 [torch.from_numpy(x) if isinstance(x, np.ndarray) else x for x in batch_xs]
             )
             batch_embeddings = torch.stack(
                 [torch.from_numpy(embedding) if isinstance(embedding, np.ndarray) else embedding for embedding in batch_embeddings]
             )
-            batches.append((batch_texts, batch_xs, batch_embeddings))
+            batches.append((batch_texts, batch_xs, batch_embeddings, batch_subjects))
     return batches
 
 def loader_provider(args, period='train'):
     if period == 'train':
-        dataset1 = BenchpressT2SDataset(
+        dataset1 = DeadliftT2SDataset(
             json_path=os.path.join(args.dataset_root, args.dataset_name, 'data.json'),
             caption_root = os.path.join(args.dataset_root, args.dataset_name, args.caption),
             emb_dim=args.embedding_dim,
             data_dim=args.split_base_num,
             period=period
         )
-        dataset2 = BenchpressT2SDataset(
+        dataset2 = DeadliftT2SDataset(
             json_path=os.path.join(args.dataset_root, args.dataset_name, 'data.json'),
             caption_root = os.path.join(args.dataset_root, args.dataset_name, args.caption),
             emb_dim=args.embedding_dim,
             data_dim=args.split_base_num*2,
             period=period
         )
-        dataset3 = BenchpressT2SDataset(
+        dataset3 = DeadliftT2SDataset(
             json_path=os.path.join(args.dataset_root, args.dataset_name, 'data.json'),
             caption_root = os.path.join(args.dataset_root, args.dataset_name, args.caption),
             emb_dim=args.embedding_dim,
@@ -69,11 +70,11 @@ def loader_provider(args, period='train'):
         common = dict(batch_size=args.batch_size, collate_fn=custom_collate_fn)
     
     elif period == 'test':
-        dataset = BenchpressT2SDataset(
+        dataset = DeadliftT2SDataset(
             json_path=os.path.join(args.dataset_root, args.dataset_name, 'data.json'),
             caption_root = os.path.join(args.dataset_root, args.dataset_name, args.caption),
             emb_dim=args.embedding_dim,
-            data_dim=args.split_base_num*2,
+            data_dim=0,
             period=period
         )
         common = dict(batch_size=args.batch_size)

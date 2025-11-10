@@ -32,11 +32,6 @@ class BenchpressT2SDataset(Dataset):
         min_len = float('inf')  # 初始化為無限大
         
         for subject, clips in all_data.items():
-            gt_cat = []
-            for cat in category:
-                if cat in subject:
-                    gt_cat.append(cat)
-                    
             for clip, feat_dict in clips.items():
                 caption_path = path.join(caption_root, subject, clip, 'caption.json')
                 with open(caption_path, 'r', encoding="utf-8") as f:
@@ -95,7 +90,7 @@ class BenchpressT2SDataset(Dataset):
                 elif not torch.is_tensor(embedding):
                     embedding = torch.as_tensor(embedding, dtype=torch.float32)
 
-                self.records.append((text, x_nfT, embedding))
+                self.records.append((text, x_nfT, embedding, subject))
     
     def _map_target_len(self, T: int, target_T):
         if target_T == 36:

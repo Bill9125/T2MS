@@ -1,4 +1,3 @@
-from itertools import count
 import os
 import datetime
 import numpy as np
@@ -15,6 +14,17 @@ import argparse
 import torch
 from scipy.stats import norm
 from utils import get_cfg
+
+def convert_numpy(obj):
+    if isinstance(obj, dict):
+        return {k: convert_numpy(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy(v) for v in obj]
+    elif isinstance(obj, np.generic):  # 處理所有 numpy scalar (float32, int32 等)
+        return obj.item()
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    return obj
 
 def normalize(x):
     # 沿每一列(axis=1)計算最小和最大值，keepdims=True 保持維度方便廣播
@@ -274,7 +284,7 @@ def evaluate_data(args, ori_data, gen_data, index, result):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Train flow matching model")
-    parser.add_argument('--method_list', type=str, default='MSE,WAPE,MRR,DTW',
+    parser.add_argument('--method_list', type=str, default='MSE,WAPE,DTW',
                             help='metric list [MSE,WAPE,MRR,CRPS,C-FID,ED,ACD,SD,KD,DTW]')
     parser.add_argument('--save_path', type=str, default='./results/denoiser_results', help='Denoiser Model save path')
     parser.add_argument('--config', type=str, default='config.yaml', help='model configuration')
@@ -316,8 +326,9 @@ if __name__ == '__main__':
             for metric, value in result[key].items():
                 summary[metric] = summary.get(metric, 0) + value
         for metric in summary:
-            summary[metric] /= len(result)
+            summary[metric] = (summary[metric] / len(result)).item()
         result['summary'] = summary
+        result = convert_numpy(result)
         now = datetime.datetime.now()
         formatted_time = now.strftime("%Y%m%d-%H%M%S")
         combined_name = f'{args.model_name}_{args.dataset_name}_{formatted_time}'

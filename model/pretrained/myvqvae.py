@@ -93,10 +93,11 @@ class vqvae(BaseModel):
         num_residual_hiddens = args.res_hidden_size
         embedding_dim = args.embedding_dim
         flow_dim = args.flow_dim
+        input_dim = args.input_dim
 
         # in_channels=10（多特徵）
         self.encoder = Encoder(
-            in_channels=10,
+            in_channels=input_dim,
             num_hiddens=num_hiddens,
             num_residual_layers=num_residual_layers,
             num_residual_hiddens=num_residual_hiddens,
@@ -109,7 +110,7 @@ class vqvae(BaseModel):
             num_hiddens=num_hiddens,
             num_residual_layers=num_residual_layers,
             num_residual_hiddens=num_residual_hiddens,
-            out_channels=10
+            out_channels=input_dim
         )
 
     def shared_eval(self, batch, optimizer, mode): # pyright: ignore[reportIncompatibleMethodOverride]

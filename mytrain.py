@@ -2,7 +2,6 @@ import argparse
 import os
 import torch
 from torch.optim import AdamW, lr_scheduler
-from datafactory.benchpress_dataloader import loader_provider
 from model.backbone.rectified_flow import RectifiedFlow
 from model.backbone.DDPM import DDPM
 from model.denoiser.mytransformer import Transformer
@@ -16,6 +15,10 @@ from utils import get_cfg
 def train(args):
     print(f"Training config::\tepoch: {args.epochs}\tsave_path: {args.save_path}\tdevice: {args.device}")
     os.makedirs(args.save_path, exist_ok=True)
+    if args.dataset_name == 'deadlift':
+        from datafactory.deadlift.dataloader import loader_provider
+    elif args.dataset_name == 'benchpress':
+        from datafactory.benchpress.dataloader import loader_provider
     train_loader, test_loader = loader_provider(args)
     model = {'DiT': Transformer(args.flow_dim), 'MLP': MLP}.get(args.denoiser)
     if model:
@@ -57,7 +60,7 @@ def train(args):
     for epoch in range(start_epoch, args.epochs):
         group_losses = []
         for group in tqdm(train_loader, desc=f"Epoch {epoch}/{args.epochs}"):
-            for (y_text, x_1, y_text_embedding) in group:
+            for (y_text, x_1, y_text_embedding, subject) in group:
                 y_text_embedding = y_text_embedding.float().to(args.device)
                 x_1 = x_1.float().to(args.device)
                 x_1, before = model.encoder(x_1)  # TS data ==>VAE==> clear TS embedding
@@ -92,14 +95,14 @@ def train(args):
             save_dict = dict(model=model.state_dict(), optimizer=optimizer.state_dict(), epoch=epoch, loss_list=loss_list)
             torch.save(save_dict, os.path.join(args.save_path, f'model_{epoch}.pth'))
 
-        if epoch == 7000:
+        if epoch == 3000:
             break
 
 def get_args():
     parser = argparse.ArgumentParser(description="Train T2S model")
     parser.add_argument('--checkpoint_path', type=str, help='checkpoint path')
-    parser.add_argument('--dataset_name', type=str, default='benchpress', help='dataset name')
-    parser.add_argument('--pretrained_model_path', type=str, default='./results/saved_pretrained_models/36_benchpress_epoch80000/final_model.pth')
+    parser.add_argument('--dataset_name', type=str, choices=['deadlift', 'benchpress'], help='dataset name')
+    parser.add_argument('--pretrained_model_path', type=str, default='./results/saved_pretrained_models/48_deadlift_epoch10000/final_model.pth')
     parser.add_argument('--batch_size', type=int, default=512, help='batch_size')
     parser.add_argument('--epochs', type=int, default=20000, help='training epochs')
     parser.add_argument('--save_path', type=str, default='./results/denoiser_results', help='denoiser model save path')
@@ -112,7 +115,7 @@ def get_args():
     args = parser.parse_args()
     args = get_cfg(args)
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    args.save_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, '80000'))
+    args.save_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, '10000'))
     return args
 
 if __name__ == '__main__':

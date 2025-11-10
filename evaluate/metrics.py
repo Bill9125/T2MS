@@ -292,6 +292,7 @@ if __name__ == '__main__':
     rival = {2: 'recording_20241226_161846', 3: 'recording_20241226_162038',
                     4: 'recording_20241226_162307', 5: 'recording_20241226_162449'}
     parser.add_argument('--rival', default=1, type=int)
+    parser.add_argument('--sport', choices=['benchpress', 'deadlift'], type=str)
     args = parser.parse_args()
 
     root = './3D_Real_Final/Category_1/recording_20241226_161701'
