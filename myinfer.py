@@ -12,7 +12,7 @@ import numpy as np
 import math
 from pretrained_mylavae import plot_pca_tsne
 import json
-from utils import get_cfg
+from utils import get_cfg, BenchpressAnimator
 from myevaluation import calculate_mse, normalize
 
 def save_diffusion_gif(frames, save_path, filename='diffusion.gif'):
@@ -102,7 +102,7 @@ def infer(args):
     subjects_list = []
     with (torch.no_grad()):
         for batch, data in enumerate(test_loader):
-            features = {feat : {} for feat in args.features[2:]}
+            features = {feat : {} for feat in args.features[-args.input_dim:]}
             print(f'Generating {batch}th Batch TS...')
 
             y, x_1, embedding, subject = data
@@ -147,22 +147,25 @@ def infer(args):
 
             x_1 = x_1.detach().cpu().numpy().squeeze()
             x_t = x_t.detach().cpu().numpy().squeeze()
+            
+            # save predict sample
             for i, key in enumerate(features.keys()):
                 features[key] = x_t[i].astype(float).tolist()
             json_path = os.path.join(args.generation_save_path_result, f'samples_{batch}.json')
+            ani_path = os.path.join(args.generation_save_path_result, f'samples_{batch}.gif')
+            np.save(os.path.join(args.generation_save_path_result, f'sample_{batch}.npy'), x_t)
+            BenchpressAnimator(features).animate(ani_path)
             with open(json_path, 'w') as f:
                 json.dump(features, f, indent=4)
-            print(f'Features saved to {json_path}')
-
+            
             mse = calculate_mse(np.expand_dims(normalize(x_1), 0), np.expand_dims(normalize(x_t), 0))
             mse_list.append(mse)
             print(f'Batch {batch} MSE: {mse}')
-            np.save(os.path.join(args.generation_save_path, f'x_1_sample_{batch}.npy'), x_1)
-            np.save(os.path.join(args.generation_save_path_result, f'x_t_sample_{batch}.npy'), x_t)
+            
             x_1_list.append(x_1)
             x_t_list.append(x_t)
             subjects_list.append(subject)
-            if batch == 9:
+            if batch == 3:
                 break
     return x_1_list, x_t_list, x_infer_list, y_list, frames_list, mse_list, subjects_list
 
@@ -171,20 +174,21 @@ if __name__ == '__main__':
     parser.add_argument('--config', type=str, default='config.yaml', help='model configuration')
     parser.add_argument('--batch_size', type=int, default=1, help='batch size')
     parser.add_argument('--save_path', type=str, default='./results/denoiser_results', help='Denoiser Model save path')
-    parser.add_argument('--pretrainedvae_path', default='./results/saved_pretrained_models/48_deadlift_epoch10000/final_model.pth', help='pretrained vae')
+    
     parser.add_argument('--cfg_scale', type=int, default=3, help='CFG Scale')
-    parser.add_argument('--total_step', type=int, default=200, help='total step sampled from [0,1]')
+    parser.add_argument('--total_step', type=int, default=100, help='total step sampled from [0,1]')
 
     # for inference
-    parser.add_argument('--checkpoint_id', type=int, default=3000,help='model id')
+    parser.add_argument('--checkpoint_id', type=int, default=7000,help='model id')
     parser.add_argument('--dataset_name', type=str, choices=['deadlift', 'benchpress'], help='dataset name')
-    parser.add_argument('--run_time', type=int, default=10, help='inference run time')
+    parser.add_argument('--run_time', type=int, default=1, help='inference run time')
     args = parser.parse_args()
     args = get_cfg(args)
+    args.pretrainedvae_path = os.path.join('./results/saved_pretrained_models', f'{args.split_base_num}_{args.dataset_name}_epoch{args.pretrained_epc}', 'final_model.pth')
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    args.checkpoint_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, '10000'), 'model_{}.pth'.format(args.checkpoint_id))
+    args.checkpoint_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, args.pretrained_epc), 'model_{}.pth'.format(args.checkpoint_id))
     args.generation_save_path = os.path.join(args.save_path, 'generation', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.cfg_scale,args.total_step))
-
+    
     best_result = {}
     for i in range(args.run_time):
         args.generation_save_path_result = os.path.join(args.generation_save_path, f'run_{i}')
@@ -194,3 +198,12 @@ if __name__ == '__main__':
         plot_side_by_side_comparison(args, x_1_list, x_t_list, mse_list,  subjects_list)
         plot_pca_tsne(x_1_list, x_t_list, args.generation_save_path_result)
         # save_diffusion_gif(frames_list, args.generation_save_path, filename=f'diffusion.gif')
+    
+    # save sample
+    features = {feat : {} for feat in args.features[-args.input_dim:]}
+    for batch, x_1 in enumerate(x_1_list):
+        for i, key in enumerate(features.keys()):
+            features[key] = x_1[i].astype(float).tolist()
+        ani_path = os.path.join(args.generation_save_path, f'x_1_samples_{batch}.gif')
+        np.save(os.path.join(args.generation_save_path, f'x_1_sample_{batch}.npy'), x_1)
+        BenchpressAnimator(features).animate(ani_path)

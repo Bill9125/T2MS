@@ -52,6 +52,7 @@ benchpress:
     num_residual_layers: 3 # number of residual layers in the model
     res_hidden_size: 256 # hidden size of the residual layers
     embedding_dim: 64 # dimension of the embeddings
+    epoch: 80000
   diffusion: 
     denoiser: DiT
     backbone: flowmatching
@@ -95,6 +96,7 @@ deadlift:
     num_residual_layers: 3 # number of residual layers in the model
     res_hidden_size: 256 # hidden size of the residual layers
     embedding_dim: 64 # dimension of the embeddings
+    epoch: 10000
   diffusion: 
     denoiser: DiT
     backbone: flowmatching

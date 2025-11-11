@@ -3,9 +3,9 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import pandas as pd
 import os, json
+
 # === 手臂計算函式 ===
 L_upper, L_fore = 1.0, 1.0
-
 
 def get_arm_coords(shoulder_angle, elbow_angle, origin, side="left"):
     if side == "left":
