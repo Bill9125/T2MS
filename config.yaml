@@ -70,11 +70,11 @@ deadlift:
       - name: left_knee
       - definition: Left knee joint angle formed between the left tibia and the left thigh (femur).
     3: 
-      - name: right_knee
-      - definition: Right knee joint angle formed between the right tibia and the right thigh (femur).
-    4: 
       - name: left_hip
       - definition: Left hip joint angle formed between the left trunk/torso and the left thigh (femur).
+    4: 
+      - name: right_knee
+      - definition: Right knee joint angle formed between the right tibia and the right thigh (femur).
     5: 
       - name: right_hip
       - definition: Right hip joint angle formed between the right trunk/torso and the right thigh (femur).
@@ -87,10 +87,10 @@ deadlift:
     8: 
       - name: right_torso-arm
       - definition: Right shoulder joint angle formed between the right humerus and the right trunk/torso.
-  flow_dim: 128
+  flow_dim: 50
   dataset: 
     split_base_num: 48
-    caption: Caption_with_feature_explaination
+    caption: Caption_explain_no_barbell
   vae: 
     block_hidden_size: 128 # hidden size of the blocks in the network
     num_residual_layers: 3 # number of residual layers in the model

@@ -66,7 +66,7 @@ def clip_caption(features):
 
 def pairwise_summary(features):
     pair_descriptions = []
-    feature_names = list(features.keys())[3:]
+    feature_names = list(features.keys())[2:]
     
     # 使用 ThreadPoolExecutor 來管理執行緒
     with ThreadPoolExecutor(max_workers=11) as executor:
@@ -146,7 +146,7 @@ if __name__ == "__main__":
     parser.add_argument('--max_retries', type=int, default=3)
     args = parser.parse_args()
     args.data_path = f'./Data/{args.sport}/data.json'
-    args.output_path = f'./Data/{args.sport}/Caption_with_feature_explaination'
+    args.output_path = f'./Data/{args.sport}/Caption_explain_no_barbell_100'
     load_dotenv()
     api_key = os.getenv("OPENAI_API_KEY")
     client = openai.OpenAI(api_key=api_key)
@@ -170,11 +170,14 @@ if __name__ == "__main__":
             while retries < args.max_retries:
                 try:
                     print(f'current sample is {subject} on {clip}')
-                    caption = clip_caption(features)
                     save_dir = path.join(args.output_path, subject, clip)
                     if not path.exists(save_dir):
                         os.makedirs(save_dir)
+                    else:
+                        print('Already exist.')
+                        break
                     txt_path = path.join(save_dir, 'caption.json')
+                    caption = clip_caption(features)
                     with open(txt_path, 'w', encoding="utf-8") as f:
                         json.dump(caption, f, indent=4)
                     fig_path = path.join(save_dir, 'fig.jpg')

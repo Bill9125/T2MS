@@ -12,8 +12,12 @@ import numpy as np
 import math
 from pretrained_mylavae import plot_pca_tsne
 import json
-from utils import get_cfg, BenchpressAnimator
+from utils import get_cfg
 from myevaluation import calculate_mse, normalize
+from visualize.benchpress import RearV_BenchpressAnimator, TopV_BenchpressAnimator
+from sklearn.preprocessing import PolynomialFeatures, StandardScaler
+from sklearn.linear_model import LinearRegression
+from sklearn.pipeline import Pipeline
 
 def save_diffusion_gif(frames, save_path, filename='diffusion.gif'):
     gif_path = os.path.join(save_path, filename)
@@ -52,6 +56,15 @@ def plot_side_by_side_comparison(args, x_1, x_t, mse_list, subjects_list):
         # 右圖：generated
         ax2 = plt.subplot(1, 2, 2)
         for j in range(len(x_t[i])):
+            poly_reg = Pipeline([
+                ("poly_features", PolynomialFeatures(degree=2)),
+                ("scaler", StandardScaler()),
+                ("lin_reg", LinearRegression())
+            ])
+            X = np.arange(len(x_1[i][j])).reshape(-1, 1)
+            poly_reg.fit(X, x_1[i][j])
+            y_fit = poly_reg.predict(X)
+            ax1.plot(y_fit, 'o-', label=f"{args.features[j+2]}")
             ax2.plot(x_t[i][j], label=f"{args.features[j+2]}")
         ax2.set_title('Generated')
         ax2.legend()
@@ -59,6 +72,17 @@ def plot_side_by_side_comparison(args, x_1, x_t, mse_list, subjects_list):
         plt.tight_layout()  # 留出 suptitle 空間
         plt.savefig(fig_path)
         plt.close()
+        
+def save_result(root, features):
+    # save predict sample
+    os.makedirs(root, exist_ok=True)
+    json_path = os.path.join(root, f'data.json')
+    rear = os.path.join(root, f'rear.gif')
+    top = os.path.join(root, f'top.gif')
+    # RearV_BenchpressAnimator(features).animate(rear)
+    # TopV_BenchpressAnimator(features).animate(top)
+    with open(json_path, 'w') as f:
+        json.dump(features, f, indent=4)
 
 def infer(args):
     step = args.total_step
@@ -148,16 +172,6 @@ def infer(args):
             x_1 = x_1.detach().cpu().numpy().squeeze()
             x_t = x_t.detach().cpu().numpy().squeeze()
             
-            # save predict sample
-            for i, key in enumerate(features.keys()):
-                features[key] = x_t[i].astype(float).tolist()
-            json_path = os.path.join(args.generation_save_path_result, f'samples_{batch}.json')
-            ani_path = os.path.join(args.generation_save_path_result, f'samples_{batch}.gif')
-            np.save(os.path.join(args.generation_save_path_result, f'sample_{batch}.npy'), x_t)
-            BenchpressAnimator(features).animate(ani_path)
-            with open(json_path, 'w') as f:
-                json.dump(features, f, indent=4)
-            
             mse = calculate_mse(np.expand_dims(normalize(x_1), 0), np.expand_dims(normalize(x_t), 0))
             mse_list.append(mse)
             print(f'Batch {batch} MSE: {mse}')
@@ -165,9 +179,18 @@ def infer(args):
             x_1_list.append(x_1)
             x_t_list.append(x_t)
             subjects_list.append(subject)
+            
+            for i, key in enumerate(features.keys()):
+                features[key] = x_t[i].astype(float).tolist()
+            save_path = os.path.join(args.generation_save_path_result, f'sample_{batch}')
+            save_result(save_path, features)
+            np.save(os.path.join(save_path, f'x_t.npy'), x_t)
             if batch == 3:
                 break
-    return x_1_list, x_t_list, x_infer_list, y_list, frames_list, mse_list, subjects_list
+            
+    plot_side_by_side_comparison(args, x_1_list, x_t_list, mse_list,  subjects_list)
+    plot_pca_tsne(x_1_list, x_t_list, args.generation_save_path_result)
+    return x_1_list
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Inference flow matching model")
@@ -179,7 +202,7 @@ if __name__ == '__main__':
     parser.add_argument('--total_step', type=int, default=100, help='total step sampled from [0,1]')
 
     # for inference
-    parser.add_argument('--checkpoint_id', type=int, default=7000,help='model id')
+    parser.add_argument('--checkpoint_id', type=int, default=2000,help='model id')
     parser.add_argument('--dataset_name', type=str, choices=['deadlift', 'benchpress'], help='dataset name')
     parser.add_argument('--run_time', type=int, default=1, help='inference run time')
     args = parser.parse_args()
@@ -192,18 +215,14 @@ if __name__ == '__main__':
     best_result = {}
     for i in range(args.run_time):
         args.generation_save_path_result = os.path.join(args.generation_save_path, f'run_{i}')
-        x_t_path = os.path.join(args.generation_save_path_result, 'x_t.npy')
-        os.makedirs(args.generation_save_path_result, exist_ok=True)
-        x_1_list, x_t_list, x_infer_list, y_list, frames_list, mse_list, subjects_list = infer(args)
-        plot_side_by_side_comparison(args, x_1_list, x_t_list, mse_list,  subjects_list)
-        plot_pca_tsne(x_1_list, x_t_list, args.generation_save_path_result)
-        # save_diffusion_gif(frames_list, args.generation_save_path, filename=f'diffusion.gif')
+        x_1_list = infer(args)
     
     # save sample
     features = {feat : {} for feat in args.features[-args.input_dim:]}
     for batch, x_1 in enumerate(x_1_list):
         for i, key in enumerate(features.keys()):
             features[key] = x_1[i].astype(float).tolist()
-        ani_path = os.path.join(args.generation_save_path, f'x_1_samples_{batch}.gif')
-        np.save(os.path.join(args.generation_save_path, f'x_1_sample_{batch}.npy'), x_1)
-        BenchpressAnimator(features).animate(ani_path)
+        rear = os.path.join(args.generation_save_path_result, f'rear_{batch}.gif')
+        top = os.path.join(args.generation_save_path_result, f'top_{batch}.gif')
+        # RearV_BenchpressAnimator(features).animate(rear)
+        # TopV_BenchpressAnimator(features).animate(top)

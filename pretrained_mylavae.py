@@ -51,7 +51,7 @@ def plot_comparison_animation(real, recon, save_dir, gif_name='comparison.gif', 
         z = recon[idx]     # [10, T2]
 
         # 每條特徵曲線分別更新
-        for i in range(10):
+        for i in range(7):
             xr = np.arange(r.shape[1]);  xz = np.arange(z.shape[1])
             lines_real[i].set_data(xr, r[i])
             lines_reco[i].set_data(xz, z[i])
@@ -164,7 +164,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset_name', type=str, choices=['deadlift', 'benchpress'], help='dataset name')
     parser.add_argument('--batch_size', type=int, default=16)
-    parser.add_argument('--num_training_updates', type=int, default=10000, help='number of training updates/epochs')
     parser.add_argument('--save_path', type=str, default='results/saved_pretrained_models/', help='denoiser model save path')
     parser.add_argument('--only_inference', type=bool, default=False)
 
@@ -175,7 +174,7 @@ if __name__ == '__main__':
     parser.add_argument('--commitment_cost', type=float, default=0.25, help='commitment cost used in the loss function')
     args = get_cfg(parser.parse_args())
 
-    save_folder_name = '{}_{}_epoch{}'.format(args.split_base_num, args.dataset_name, args.num_training_updates)
+    save_folder_name = '{}_{}_epoch{}'.format(args.split_base_num, args.dataset_name, args.pretrained_epc)
     save_dir = os.path.join(args.save_path, save_folder_name)
     os.makedirs(save_dir, exist_ok=True)
 
@@ -193,7 +192,7 @@ if __name__ == '__main__':
     train_loader, test_loader = loader_provider(args)
 
     if not args.only_inference:
-        total_epochs = int((args.num_training_updates / max(1, len(train_loader))) + 0.5)
+        total_epochs = int((args.pretrained_epc / max(1, len(train_loader))) + 0.5)
         print(f'total epoch : {total_epochs}')
         loss_list = []
         for epoch in range(total_epochs):

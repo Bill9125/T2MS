@@ -89,6 +89,7 @@ class FeatureMerger:
                     dtype={c: "float64" for c in self.col_names[1:]},
                 )
                 angle_features = df.to_dict(orient="list")
+                angle_features['body_length'] = [100*v for v in angle_features['body_length']]
             all_clip_angle_features[self._extract_clip_number(angle_path)] = angle_features
         return all_clip_angle_features
 

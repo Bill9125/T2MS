@@ -12,7 +12,7 @@ def get_feature_cfg(args):
     feature_explaination = {}
     with open(args.config, 'r') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
-        f = config[args.sport]['feature']
+        f = config[args.sport]['features']
         for id, [name, defn] in f.items():
             feature_list[f'feature_{id}'] = name['name']
             feature_explaination[f'feature_{id}'] = defn['definition']

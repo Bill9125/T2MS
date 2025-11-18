@@ -95,7 +95,7 @@ def train(args):
             save_dict = dict(model=model.state_dict(), optimizer=optimizer.state_dict(), epoch=epoch, loss_list=loss_list)
             torch.save(save_dict, os.path.join(args.save_path, f'model_{epoch}.pth'))
 
-        if epoch == 3000:
+        if epoch == 2500:
             break
 
 def get_args():
@@ -115,7 +115,7 @@ def get_args():
     args = parser.parse_args()
     args = get_cfg(args)
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    args.save_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, '10000'))
+    args.save_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, args.pretrained_epc))
     return args
 
 if __name__ == '__main__':
