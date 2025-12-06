@@ -43,16 +43,17 @@ benchpress:
     12: 
       - name: right_torso-arm
       - definition: Angle at the right armpit between the torso axis and the right upper arm in the top-down view.
-  flow_dim: 128 # embedding dim flow into/in diffusion
+  flow_dim: 64 # embedding dim flow into/in diffusion
   dataset: 
     split_base_num: 36
-    caption: Caption_explain_no_barbell
+    caption: Caption_explain_no_barbell_length
   vae: 
-    block_hidden_size: 128 # hidden size of the blocks in the network
-    num_residual_layers: 3 # number of residual layers in the model
-    res_hidden_size: 256 # hidden size of the residual layers
-    embedding_dim: 64 # dimension of the embeddings
-    epoch: 80000
+    d_ff: 128 
+    num_encoder_layers: 3
+    num_decoder_layers: 3
+    num_heads: 8
+    embedding_dim: 64 
+    epoch: 16000
   diffusion: 
     denoiser: DiT
     backbone: flowmatching
@@ -96,7 +97,7 @@ deadlift:
     num_residual_layers: 3 # number of residual layers in the model
     res_hidden_size: 256 # hidden size of the residual layers
     embedding_dim: 64 # dimension of the embeddings
-    epoch: 10000
+    epoch: 20000
   diffusion: 
     denoiser: DiT
     backbone: flowmatching

@@ -48,10 +48,11 @@ def get_cfg(args):
         args.split_base_num = cfg['dataset'].get('split_base_num', 36)
         args.caption = cfg['dataset'].get('caption', 'Caption_explain_no_barbell')
 
+        args.d_ff = cfg['vae'].get('d_ff', 64)
+        args.num_encoder_layers = cfg['vae'].get('num_encoder_layers', 128)
+        args.num_decoder_layers = cfg['vae'].get('num_decoder_layers', 128)
+        args.num_heads = cfg['vae'].get('num_heads', 8)
         args.embedding_dim = cfg['vae'].get('embedding_dim', 64)
-        args.block_hidden_size = cfg['vae'].get('block_hidden_size', 128)
-        args.num_residual_layers = cfg['vae'].get('num_residual_layers', 3)
-        args.res_hidden_size = cfg['vae'].get('res_hidden_size', 256)
         args.pretrained_epc = cfg['vae'].get('epoch', 80000)
         
         args.denoiser = cfg['diffusion'].get('denoiser', 'DiT')

@@ -18,6 +18,32 @@ from visualize.benchpress import RearV_BenchpressAnimator, TopV_BenchpressAnimat
 from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 from sklearn.linear_model import LinearRegression
 from sklearn.pipeline import Pipeline
+import openai
+from dotenv import load_dotenv
+
+def process_clip(client: openai.OpenAI, subject: str, text: str) -> None:
+    category = ['correct', 'tilting_to_the_right', 'tilting_to_the_left', 'elbows_flaring', 'wrist_bending_backward', 'scapular_protraction']
+    found_cats = [cat.replace('_', ' ') for cat in category if cat in subject[0]]
+    print(found_cats)
+    
+    if not found_cats:
+        classes = "unknown"
+    elif len(found_cats) == 1:
+        classes = found_cats[0]
+    else:
+        classes = ", ".join(found_cats[:-1]) + " and " + found_cats[-1]
+
+    prefix = f"The following presents the smooth feature description for the bench press as follows: \n"
+    embedding = get_embedding(client, prefix + text[0])
+    return torch.as_tensor(embedding, dtype=torch.float32)
+
+def get_embedding(client, text: str,
+                  model: str = "text-embedding-3-large",
+                  dim: int = 128) -> list[float]:
+    """呼叫 OpenAI embeddings API，回傳 128 維向量。"""
+    text = text.replace("\n", " ")
+    r = client.embeddings.create(input=[text], model=model, dimensions=dim)
+    return r.data[0].embedding
 
 def save_diffusion_gif(frames, save_path, filename='diffusion.gif'):
     gif_path = os.path.join(save_path, filename)
@@ -56,15 +82,15 @@ def plot_side_by_side_comparison(args, x_1, x_t, mse_list, subjects_list):
         # 右圖：generated
         ax2 = plt.subplot(1, 2, 2)
         for j in range(len(x_t[i])):
-            poly_reg = Pipeline([
-                ("poly_features", PolynomialFeatures(degree=2)),
-                ("scaler", StandardScaler()),
-                ("lin_reg", LinearRegression())
-            ])
-            X = np.arange(len(x_1[i][j])).reshape(-1, 1)
-            poly_reg.fit(X, x_1[i][j])
-            y_fit = poly_reg.predict(X)
-            ax1.plot(y_fit, 'o-', label=f"{args.features[j+2]}")
+            # poly_reg = Pipeline([
+            #     ("poly_features", PolynomialFeatures(degree=2)),
+            #     ("scaler", StandardScaler()),
+            #     ("lin_reg", LinearRegression())
+            # ])
+            # X = np.arange(len(x_1[i][j])).reshape(-1, 1)
+            # poly_reg.fit(X, x_1[i][j])
+            # y_fit = poly_reg.predict(X)
+            # ax1.plot(y_fit, 'o-', label=f"{args.features[j+2]}")
             ax2.plot(x_t[i][j], label=f"{args.features[j+2]}")
         ax2.set_title('Generated')
         ax2.legend()
@@ -79,12 +105,13 @@ def save_result(root, features):
     json_path = os.path.join(root, f'data.json')
     rear = os.path.join(root, f'rear.gif')
     top = os.path.join(root, f'top.gif')
-    # RearV_BenchpressAnimator(features).animate(rear)
-    # TopV_BenchpressAnimator(features).animate(top)
+    RearV_BenchpressAnimator(features).animate(rear)
+    TopV_BenchpressAnimator(features).animate(top)
     with open(json_path, 'w') as f:
         json.dump(features, f, indent=4)
 
 def infer(args):
+    load_dotenv()
     step = args.total_step
     cfg_scale = args.cfg_scale
     device = args.device
@@ -124,12 +151,15 @@ def infer(args):
     frames_list = []
     x_infer_list = []
     subjects_list = []
+    client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    
     with (torch.no_grad()):
         for batch, data in enumerate(test_loader):
             features = {feat : {} for feat in args.features[-args.input_dim:]}
             print(f'Generating {batch}th Batch TS...')
 
             y, x_1, embedding, subject = data
+            embedding = process_clip(client, subject, y)
             y_list.append(y)
             x_1 = x_1.float().to(device)
             embedding = embedding.float().to(device)
@@ -185,9 +215,9 @@ def infer(args):
             save_path = os.path.join(args.generation_save_path_result, f'sample_{batch}')
             save_result(save_path, features)
             np.save(os.path.join(save_path, f'x_t.npy'), x_t)
-            if batch == 3:
+            if batch == 10:
                 break
-            
+    
     plot_side_by_side_comparison(args, x_1_list, x_t_list, mse_list,  subjects_list)
     plot_pca_tsne(x_1_list, x_t_list, args.generation_save_path_result)
     return x_1_list
@@ -202,7 +232,7 @@ if __name__ == '__main__':
     parser.add_argument('--total_step', type=int, default=100, help='total step sampled from [0,1]')
 
     # for inference
-    parser.add_argument('--checkpoint_id', type=int, default=2000,help='model id')
+    parser.add_argument('--checkpoint_id', type=int, default=2500,help='model id')
     parser.add_argument('--dataset_name', type=str, choices=['deadlift', 'benchpress'], help='dataset name')
     parser.add_argument('--run_time', type=int, default=1, help='inference run time')
     args = parser.parse_args()
@@ -224,5 +254,5 @@ if __name__ == '__main__':
             features[key] = x_1[i].astype(float).tolist()
         rear = os.path.join(args.generation_save_path_result, f'rear_{batch}.gif')
         top = os.path.join(args.generation_save_path_result, f'top_{batch}.gif')
-        # RearV_BenchpressAnimator(features).animate(rear)
-        # TopV_BenchpressAnimator(features).animate(top)
+        RearV_BenchpressAnimator(features).animate(rear)
+        TopV_BenchpressAnimator(features).animate(top)

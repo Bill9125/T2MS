@@ -140,3 +140,17 @@ class vqvae(BaseModel):
         z, _ = self.encoder(x)              # [B, E, 30]
         out, _ = self.decoder(z, length=L)  # [B, 52, 100]
         return out
+    
+    def custom_loss(self, x, y, lambda_smooth=0.1):
+        # Smooth L1 Loss
+        smooth_l1_loss = F.smooth_l1_loss(x, y)
+        
+        # Temporal Smoothness Loss
+        # Calculate the temporal difference (velocity) along the last dimension (Time)
+        x_diff = x[..., 1:] - x[..., :-1]
+        y_diff = y[..., 1:] - y[..., :-1]
+        
+        # Calculate loss on the temporal differences
+        temporal_smoothness_loss = F.smooth_l1_loss(x_diff, y_diff)
+        
+        return smooth_l1_loss + lambda_smooth * temporal_smoothness_loss

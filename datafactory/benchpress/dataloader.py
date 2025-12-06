@@ -32,16 +32,19 @@ def custom_collate_fn(batch):
     batches = []
     for idx, data_list in grouped_data.items():
         if data_list:
-            batch_texts, batch_xs, batch_embeddings, subjects = zip(*data_list)
+            batch_texts, batch_xs, batch_prefix_embeddings, batch_summary_embeddings, subjects = zip(*data_list)
             batch_texts = [torch.from_numpy(text) if isinstance(text, np.ndarray) else text for text in batch_texts]
             batch_subjects = [torch.from_numpy(subject) if isinstance(subject, np.ndarray) else subject for subject in subjects]
             batch_xs = torch.stack(
                 [torch.from_numpy(x) if isinstance(x, np.ndarray) else x for x in batch_xs]
             )
-            batch_embeddings = torch.stack(
-                [torch.from_numpy(embedding) if isinstance(embedding, np.ndarray) else embedding for embedding in batch_embeddings]
+            batch_prefix_embeddings = torch.stack(
+                [torch.from_numpy(embedding) if isinstance(embedding, np.ndarray) else embedding for embedding in batch_prefix_embeddings]
             )
-            batches.append((batch_texts, batch_xs, batch_embeddings, batch_subjects))
+            batch_summary_embeddings = torch.stack(
+                [torch.from_numpy(embedding) if isinstance(embedding, np.ndarray) else embedding for embedding in batch_summary_embeddings]
+            )
+            batches.append((batch_texts, batch_xs, batch_prefix_embeddings, batch_summary_embeddings, batch_subjects))
     return batches
 
 def loader_provider(args, period='train'):

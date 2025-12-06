@@ -28,8 +28,6 @@ def train(args):
 
     pretrained_model = vqvae(args).float().to(args.device)
     pretrained_model.load_state_dict(torch.load(args.pretrained_model_path, map_location=torch.device(args.device)))
-    # pretrained_model = torch.load(args.pretrained_model_path, map_location=torch.device(args.device), weights_only=False)
-    # pretrained_model.float().to(args.device)
     backbone = {'flowmatching': RectifiedFlow(), 'ddpm': DDPM(args.total_step, args.device)}.get(args.backbone)
     if backbone:
         pass
@@ -95,14 +93,13 @@ def train(args):
             save_dict = dict(model=model.state_dict(), optimizer=optimizer.state_dict(), epoch=epoch, loss_list=loss_list)
             torch.save(save_dict, os.path.join(args.save_path, f'model_{epoch}.pth'))
 
-        if epoch == 2500:
+        if epoch == 4000:
             break
 
 def get_args():
     parser = argparse.ArgumentParser(description="Train T2S model")
     parser.add_argument('--checkpoint_path', type=str, help='checkpoint path')
     parser.add_argument('--dataset_name', type=str, choices=['deadlift', 'benchpress'], help='dataset name')
-    parser.add_argument('--pretrained_model_path', type=str, default='./results/saved_pretrained_models/48_deadlift_epoch10000/final_model.pth')
     parser.add_argument('--batch_size', type=int, default=512, help='batch_size')
     parser.add_argument('--epochs', type=int, default=20000, help='training epochs')
     parser.add_argument('--save_path', type=str, default='./results/denoiser_results', help='denoiser model save path')
@@ -116,6 +113,7 @@ def get_args():
     args = get_cfg(args)
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
     args.save_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, args.pretrained_epc))
+    args.pretrained_model_path = os.path.join('./results/saved_pretrained_models', f'{args.split_base_num}_{args.dataset_name}_epoch{args.pretrained_epc}/final_model.pth')
     return args
 
 if __name__ == '__main__':

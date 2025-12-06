@@ -3,6 +3,7 @@ import numpy as np
 import os
 import torch
 from model.pretrained.myvqvae import vqvae
+from model.pretrained.TSae import AttentionSeq2SeqAutoencoder
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from sklearn.decomposition import PCA
@@ -136,13 +137,14 @@ def inference(model, test_loader, device, save_dir, num_samples=None):
         seen_batches = 0
         for batch in test_loader:
             # batch 是 List[(texts, xs, embeddings, gt_cat)]，逐組處理
-            for (texts, xs, embeddings, _) in batch:
-                xs = xs.float().to(device)  # [B, n_f, T]
-                loss, recon_error, reconstructed, z = model.shared_eval(xs, None, mode='test')
+            for (texts, xs, prefix_embeddings, _, _) in batch:
+                xs = xs.transpose(1, 2).float().to(device)  # [B, n_f, T]
+                prefix_embeddings = prefix_embeddings.clone().detach().float().to(device)
+                loss, z = model.shared_eval(xs, prefix_embeddings, None, 'test')
                 
                 # 轉 numpy 並收集
-                real_np = xs.detach().cpu().numpy()
-                reco_np = reconstructed.detach().cpu().numpy()
+                real_np = xs.transpose(1, 2).detach().cpu().numpy()
+                reco_np = z.transpose(1, 2).detach().cpu().numpy()
                 
                 # 收集所有樣本而不是逐一繪圖
                 for b in range(real_np.shape[0]):
@@ -155,7 +157,7 @@ def inference(model, test_loader, device, save_dir, num_samples=None):
             if num_samples is not None and seen_batches >= num_samples:
                 break
 
-    # 在最後一次性生成動畫
+    # # 在最後一次性生成動畫
     if len(real_samples) > 0 and len(reconstructed_samples) > 0:
         plot_comparison_animation(real_samples, reconstructed_samples, save_dir, fps=1)
         plot_pca_tsne(real_samples, reconstructed_samples, save_dir)
@@ -163,15 +165,14 @@ def inference(model, test_loader, device, save_dir, num_samples=None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset_name', type=str, choices=['deadlift', 'benchpress'], help='dataset name')
-    parser.add_argument('--batch_size', type=int, default=16)
+    parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--save_path', type=str, default='results/saved_pretrained_models/', help='denoiser model save path')
     parser.add_argument('--only_inference', type=bool, default=False)
+    parser.add_argument('--epoch', type=int, default=0)
 
     # Model-specific parameters
     parser.add_argument('--learning_rate', type=float, default=1e-3, help='learning rate for the optimizer')
     parser.add_argument('--config', type=str, default='config.yaml', help='model configuration')
-    parser.add_argument('--compression_factor', type=int, default=4, help='compression factor')
-    parser.add_argument('--commitment_cost', type=float, default=0.25, help='commitment cost used in the loss function')
     args = get_cfg(parser.parse_args())
 
     save_folder_name = '{}_{}_epoch{}'.format(args.split_base_num, args.dataset_name, args.pretrained_epc)
@@ -181,8 +182,8 @@ if __name__ == '__main__':
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     seed_everything(args.general_seed)
 
-    model = vqvae(args).to(device)
-    optimizer = model.configure_optimizers(lr=args.learning_rate)
+    model = AttentionSeq2SeqAutoencoder(args).to(device)
+    optimizer, scheduler = model.configure_optimizers(lr=args.learning_rate)
 
     # 取得 train/test 的 DataLoader（內含自訂 collate_fn，會回傳分組子批次 list）
     if args.dataset_name == 'deadlift':
@@ -192,32 +193,46 @@ if __name__ == '__main__':
     train_loader, test_loader = loader_provider(args)
 
     if not args.only_inference:
-        total_epochs = int((args.pretrained_epc / max(1, len(train_loader))) + 0.5)
+        if args.epoch != 0:
+            model.load_state_dict(torch.load(os.path.join(save_dir, 'final_model.pth'), map_location=device), strict=False)
+        total_epochs = int(((args.pretrained_epc + args.epoch) / max(1, len(train_loader))) + 0.5)
         print(f'total epoch : {total_epochs}')
         loss_list = []
         for epoch in range(total_epochs):
             model.train()
             epoch_losses = []
             group_losses = []
+            val_losses = []
             for batch in tqdm(train_loader, desc=f"Epoch {epoch+1}/{total_epochs}"):
-                for (texts, xs, embeddings, _) in batch:
-                    xs = xs.clone().detach().float().to(device)  # [B_g, n_f, T]
-                    loss, recon_error, x_recon, z = model.shared_eval(xs, optimizer, 'train')
+                for (texts, xs, prefix_embeddings, _, _) in batch:
+                    xs = xs.transpose(1, 2).clone().detach().float().to(device)  # [B_g, T, n_f]
+                    prefix_embeddings = prefix_embeddings.clone().detach().float().to(device)  # [B_g, T]
+                    loss, z = model.shared_eval(xs, prefix_embeddings, optimizer, 'train')
                     group_losses.append(loss.item())
                 if len(group_losses) > 0:
                     epoch_losses.append(np.mean(group_losses))
-            print(f"Epoch: {epoch+1}, Batch: {len(epoch_losses)}, Loss: {np.mean(group_losses):.6f}")
+            
+                    
+            print(f"Epoch: {epoch+1}, Batch: {len(epoch_losses)}, Training Loss: {np.mean(group_losses):.6f}")
             loss_list.append(np.mean(group_losses))
+            scheduler.step()
             # 週期性儲存
-            if epoch % max(1, total_epochs // 10) == 0:
+            if (epoch) % max(1, total_epochs // 10) == 0:
+                model.eval()
+                for batch in test_loader:
+                    for (texts, xs, prefix_embeddings, _, _) in batch:
+                        xs = xs.transpose(1, 2).clone().detach().float().to(device)  # [B_g, T, n_f]
+                        prefix_embeddings = prefix_embeddings.clone().detach().float().to(device)  # [B_g, T]
+                        loss, z = model.shared_eval(xs, prefix_embeddings, optimizer, 'val')
+                        val_losses.append(loss.item())
+                print(f"Validation Loss: {np.mean(val_losses):.6f}")
                 plot_loss_curve(loss_list, save_dir, filename=f'loss_curve_epoch.png')
                 torch.save(model.state_dict(), os.path.join(save_dir, f'model_epoch_{epoch}.pth'))
                 print(f'Saved Model from epoch: {epoch}')
-
 
         torch.save(model.state_dict(), os.path.join(save_dir, 'final_model.pth'))
         print("Training complete.")
 
     print("Starting inference...")
-    model.load_state_dict(torch.load(os.path.join(save_dir, 'final_model.pth'), map_location=device))
+    model.load_state_dict(torch.load(os.path.join(save_dir, 'final_model.pth'), map_location=device), strict=False)
     inference(model, test_loader, device, save_dir, num_samples=None)

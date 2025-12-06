@@ -37,7 +37,8 @@ class BenchpressT2SDataset(Dataset):
                 with open(caption_path, 'r', encoding="utf-8") as f:
                     data = json.load(f)
                     text = data['Summary']
-                    embedding = data['embedding']
+                    prefix_embedding = data['Prefix_embedding']
+                    summary_embedding = data['Summary_embedding']
                     
                 # 收集同一個 clip 內所有特徵為 1D 時序 [T]
                 keys = feat_dict.keys()
@@ -85,12 +86,16 @@ class BenchpressT2SDataset(Dataset):
                             x_1cT = F.interpolate(x_1cT, size=Ttar, mode='linear', align_corners=True)  # [1, n_f, Ttar]
                         x_nfT = x_1cT.squeeze(0)  # [n_f, Ttar]
 
-                if isinstance(embedding, np.ndarray):
-                    embedding = torch.from_numpy(embedding)
-                elif not torch.is_tensor(embedding):
-                    embedding = torch.as_tensor(embedding, dtype=torch.float32)
+                if isinstance(prefix_embedding, np.ndarray):
+                    prefix_embedding = torch.from_numpy(prefix_embedding)
+                elif not torch.is_tensor(prefix_embedding):
+                    prefix_embedding = torch.as_tensor(prefix_embedding, dtype=torch.float32)
+                if isinstance(summary_embedding, np.ndarray):
+                    summary_embedding = torch.from_numpy(summary_embedding)
+                elif not torch.is_tensor(summary_embedding):
+                    summary_embedding = torch.as_tensor(summary_embedding, dtype=torch.float32)
 
-                self.records.append((text, x_nfT, embedding, subject))
+                self.records.append((text, x_nfT, prefix_embedding, summary_embedding, subject))
     
     def _map_target_len(self, T: int, target_T):
         if target_T == 36:
