@@ -20,7 +20,7 @@ def train(args):
     elif args.dataset_name == 'benchpress':
         from datafactory.benchpress.dataloader import loader_provider
     train_loader, test_loader = loader_provider(args)
-    model = {'DiT': Transformer(args.flow_dim), 'MLP': MLP}.get(args.denoiser)
+    model = {'DiT': Transformer(args.flow_dim, embedding_dim=args.embedding_dim), 'MLP': MLP}.get(args.denoiser)
     if model:
         model = model.to(args.device)
     else:
@@ -102,7 +102,7 @@ def get_args():
     parser = argparse.ArgumentParser(description="Train T2S model")
     parser.add_argument('--checkpoint_path', type=str, help='checkpoint path')
     parser.add_argument('--dataset_name', type=str, choices=['deadlift', 'benchpress'], help='dataset name')
-    parser.add_argument('--pretrained_model_path', type=str, default='./results/saved_pretrained_models/48_deadlift_epoch10000/final_model.pth')
+    parser.add_argument('--pretrained_model_path', type=str, default='./results/saved_pretrained_models/36_benchpress_epoch30000/final_model.pth')
     parser.add_argument('--batch_size', type=int, default=512, help='batch_size')
     parser.add_argument('--epochs', type=int, default=20000, help='training epochs')
     parser.add_argument('--save_path', type=str, default='./results/denoiser_results', help='denoiser model save path')
@@ -115,7 +115,7 @@ def get_args():
     args = parser.parse_args()
     args = get_cfg(args)
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    args.save_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, args.pretrained_epc))
+    args.save_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, args.pretrained_epc, args.total_step))
     return args
 
 if __name__ == '__main__':

@@ -56,15 +56,15 @@ def plot_side_by_side_comparison(args, x_1, x_t, mse_list, subjects_list):
         # 右圖：generated
         ax2 = plt.subplot(1, 2, 2)
         for j in range(len(x_t[i])):
-            poly_reg = Pipeline([
-                ("poly_features", PolynomialFeatures(degree=2)),
-                ("scaler", StandardScaler()),
-                ("lin_reg", LinearRegression())
-            ])
-            X = np.arange(len(x_1[i][j])).reshape(-1, 1)
-            poly_reg.fit(X, x_1[i][j])
-            y_fit = poly_reg.predict(X)
-            ax1.plot(y_fit, 'o-', label=f"{args.features[j+2]}")
+            # poly_reg = Pipeline([
+            #     ("poly_features", PolynomialFeatures(degree=2)),
+            #     ("scaler", StandardScaler()),
+            #     ("lin_reg", LinearRegression())
+            # ])
+            # X = np.arange(len(x_1[i][j])).reshape(-1, 1)
+            # poly_reg.fit(X, x_1[i][j])
+            # y_fit = poly_reg.predict(X)
+            # ax1.plot(y_fit, 'o-', label=f"{args.features[j+2]}")
             ax2.plot(x_t[i][j], label=f"{args.features[j+2]}")
         ax2.set_title('Generated')
         ax2.legend()
@@ -79,8 +79,8 @@ def save_result(root, features):
     json_path = os.path.join(root, f'data.json')
     rear = os.path.join(root, f'rear.gif')
     top = os.path.join(root, f'top.gif')
-    # RearV_BenchpressAnimator(features).animate(rear)
-    # TopV_BenchpressAnimator(features).animate(top)
+    RearV_BenchpressAnimator(features).animate(rear)
+    TopV_BenchpressAnimator(features).animate(top)
     with open(json_path, 'w') as f:
         json.dump(features, f, indent=4)
 
@@ -131,6 +131,7 @@ def infer(args):
 
             y, x_1, embedding, subject = data
             y_list.append(y)
+            print(y)
             x_1 = x_1.float().to(device)
             embedding = embedding.float().to(device)
 
@@ -185,7 +186,7 @@ def infer(args):
             save_path = os.path.join(args.generation_save_path_result, f'sample_{batch}')
             save_result(save_path, features)
             np.save(os.path.join(save_path, f'x_t.npy'), x_t)
-            if batch == 3:
+            if batch == 10:
                 break
             
     plot_side_by_side_comparison(args, x_1_list, x_t_list, mse_list,  subjects_list)
@@ -199,18 +200,18 @@ if __name__ == '__main__':
     parser.add_argument('--save_path', type=str, default='./results/denoiser_results', help='Denoiser Model save path')
     
     parser.add_argument('--cfg_scale', type=int, default=3, help='CFG Scale')
-    parser.add_argument('--total_step', type=int, default=100, help='total step sampled from [0,1]')
+    parser.add_argument('--total_step', type=int, default=300, help='total step sampled from [0,1]')
 
     # for inference
-    parser.add_argument('--checkpoint_id', type=int, default=2000,help='model id')
+    parser.add_argument('--checkpoint_id', type=int, default=2200,help='model id')
     parser.add_argument('--dataset_name', type=str, choices=['deadlift', 'benchpress'], help='dataset name')
     parser.add_argument('--run_time', type=int, default=1, help='inference run time')
     args = parser.parse_args()
     args = get_cfg(args)
     args.pretrainedvae_path = os.path.join('./results/saved_pretrained_models', f'{args.split_base_num}_{args.dataset_name}_epoch{args.pretrained_epc}', 'final_model.pth')
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    args.checkpoint_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, args.pretrained_epc), 'model_{}.pth'.format(args.checkpoint_id))
-    args.generation_save_path = os.path.join(args.save_path, 'generation', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.cfg_scale,args.total_step))
+    args.checkpoint_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}_100'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, 20000), 'model_{}.pth'.format(args.checkpoint_id))
+    args.generation_save_path = os.path.join(args.save_path, 'generation', '{}_{}_{}_{}_{}_100'.format(args.backbone, args.denoiser, args.dataset_name, args.cfg_scale,args.total_step))
     
     best_result = {}
     for i in range(args.run_time):

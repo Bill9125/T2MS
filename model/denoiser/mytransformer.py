@@ -28,7 +28,7 @@ class TimeEmbedding(nn.Module):
         self.dim = dim
         assert dim % 2 == 0, "Dimension must be even"
     def forward(self, t):
-        t = t * 100.0
+        # t = t * 100.0
         t = t.unsqueeze(-1)
 
         freqs = torch.pow(10000, torch.linspace(0, 1, self.dim // 2)).to(t.device)
@@ -125,12 +125,12 @@ class Transformerlayer(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, dim):
+    def __init__(self, dim, embedding_dim=64):
         super().__init__()
         # patchify
         self.channel=1
         self.H = dim 
-        self.W = 64
+        self.W = embedding_dim
         emb_size=128 #64
         self.patch_size=2
         self.patch_count=int((self.H/self.patch_size)*(self.W/self.patch_size))

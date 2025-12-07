@@ -213,6 +213,13 @@ if __name__ == '__main__':
                 plot_loss_curve(loss_list, save_dir, filename=f'loss_curve_epoch.png')
                 torch.save(model.state_dict(), os.path.join(save_dir, f'model_epoch_{epoch}.pth'))
                 print(f'Saved Model from epoch: {epoch}')
+                group_losses = []
+                for batch in test_loader:
+                    for (texts, xs, embeddings, _) in batch:
+                        xs = xs.clone().detach().float().to(device)  # [B_g, n_f, T]
+                        loss, recon_error, x_recon, z = model.shared_eval(xs, optimizer, 'test')
+                        group_losses.append(loss.item())
+                print(f"Test Batch: {len(group_losses)}, Test Loss: {np.mean(group_losses):.6f}")
 
 
         torch.save(model.state_dict(), os.path.join(save_dir, 'final_model.pth'))
