@@ -163,7 +163,7 @@ class RearV_BenchpressAnimator():
         )
         # 使用 ffmpeg writer
         self.ani.save(output_file, writer="ffmpeg", fps=self.fps)
-        print(f"✅ 動畫已輸出完成：{os.path.abspath(output_file)}")
+        print(f"動畫已輸出完成：{os.path.abspath(output_file)}")
 
 
 class TopV_BenchpressAnimator():

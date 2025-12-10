@@ -112,6 +112,18 @@ class vqvae(BaseModel):
             num_residual_hiddens=num_residual_hiddens,
             out_channels=input_dim
         )
+    
+    def norm(self, x_nfT):
+        # 正規化每個特徵序列到 [0, 1]
+        for i in range(x_nfT.size(0)):  # 對每個特徵
+            feat = x_nfT[i]  # [T]
+            min_val = feat.min()
+            max_val = feat.max()
+            if max_val > min_val:  # 避免除以零
+                x_nfT[i] = (feat - min_val) / (max_val - min_val)
+            else:
+                x_nfT[i] = 0.0  # 如果序列值全部相同，設為 0
+        return x_nfT
 
     def shared_eval(self, batch, optimizer, mode): # pyright: ignore[reportIncompatibleMethodOverride]
         L = batch.shape[-1]
