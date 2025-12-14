@@ -41,19 +41,18 @@ def get_cfg(args):
         args.dataset_root = config.get('dataset_root', './Data')
         args.general_seed = config.get('general_seed', 2025)
         
-        cfg = config[args.dataset_name]
-        args.features = [feature[0]["name"] for feature in cfg["features"].values()]
-        args.flow_dim = cfg.get('flow_dim', 128)
-        args.input_dim = cfg.get('input_dim', 10)
-        args.split_base_num = cfg['dataset'].get('split_base_num', 36)
-        args.caption = cfg['dataset'].get('caption', 'Caption_explain_no_barbell')
+        args.features = [feature[0]["name"] for feature in config["features"].values()]
+        args.flow_dim = config.get('flow_dim', 128)
+        args.input_dim = config.get('input_dim', 10)
+        args.split_base_num = config['dataset'].get('split_base_num', 36)
+        args.caption = config['dataset'].get('caption', 'Caption_explain_no_barbell')
 
-        args.embedding_dim = cfg['vae'].get('embedding_dim', 64)
-        args.block_hidden_size = cfg['vae'].get('block_hidden_size', 128)
-        args.num_residual_layers = cfg['vae'].get('num_residual_layers', 3)
-        args.res_hidden_size = cfg['vae'].get('res_hidden_size', 256)
-        args.pretrained_epc = cfg['vae'].get('epoch', 80000)
+        args.embedding_dim = config['vae'].get('embedding_dim', 64)
+        args.block_hidden_size = config['vae'].get('block_hidden_size', 128)
+        args.num_residual_layers = config['vae'].get('num_residual_layers', 3)
+        args.res_hidden_size = config['vae'].get('res_hidden_size', 256)
+        args.pretrained_epc = config['vae'].get('epoch', 80000)
         
-        args.denoiser = cfg['diffusion'].get('denoiser', 'DiT')
-        args.backbone = cfg['diffusion'].get('backbone', 'flowmatching')
+        args.denoiser = config['diffusion'].get('denoiser', 'DiT')
+        args.backbone = config['diffusion'].get('backbone', 'flowmatching')
     return args

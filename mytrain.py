@@ -8,9 +8,8 @@ from model.denoiser.mytransformer import Transformer
 from model.denoiser.mlp import MLP
 from model.pretrained.myvqvae import vqvae
 from tqdm import tqdm
-from utils import plot_loss_curve, seed_everything
+from utils import get_cfg, plot_loss_curve, seed_everything
 import numpy as np
-from utils import get_cfg
 
 def train(args):
     print(f"Training config::\tepoch: {args.epochs}\tsave_path: {args.save_path}\tdevice: {args.device}")
@@ -102,7 +101,7 @@ def get_args():
     parser = argparse.ArgumentParser(description="Train T2S model")
     parser.add_argument('--checkpoint_path', type=str, help='checkpoint path')
     parser.add_argument('--dataset_name', type=str, choices=['deadlift', 'benchpress'], help='dataset name')
-    parser.add_argument('--pretrained_model_path', type=str, default='./results/saved_pretrained_models/36_benchpress_epoch30000_norm/final_model.pth')
+    parser.add_argument('--pretrained_model_path', type=str, default='./results/saved_pretrained_models/36_benchpress_epoch30000/final_model.pth')
     parser.add_argument('--batch_size', type=int, default=512, help='batch_size')
     parser.add_argument('--epochs', type=int, default=20000, help='training epochs')
     parser.add_argument('--save_path', type=str, default='./results/denoiser_results', help='denoiser model save path')
@@ -111,13 +110,13 @@ def get_args():
     parser.add_argument('--general_seed', type=int, default=2025, help='seed for random number generation')
     parser.add_argument('--usepretrainedvae', default=True, help='pretrained vae')
     parser.add_argument('--total_step', type=int, default=100, help='sampling from [0,1]')
-    parser.add_argument('--config', type=str, default='config.yaml', help='model configuration')
     args = parser.parse_args()
     args = get_cfg(args)
     print('pretrained vae: ', args.pretrained_model_path)
     print('checkpoint path: ', args.checkpoint_path)
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    args.save_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}_{}_norm'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, args.pretrained_epc, args.total_step))
+    args.save_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, args.pretrained_epc))
+    args.config = os.path.join('.', 'config', args.dataset_name + '.yaml')
     return args
 
 if __name__ == '__main__':

@@ -1,0 +1,45 @@
+dataset_root: ./Data
+general_seed: 2025
+
+input_dim: 7
+features: 
+  0: 
+    - name: bar_x
+    - definition: Horizontal x-axis coordinate of the barbell end in the image/frame (lateral-view).
+  1: 
+    - name: bar_y
+    - definition: Vertical y-axis coordinate of the barbell end in the image/frame (lateral-view).
+  2: 
+    - name: left_knee
+    - definition: Left knee joint angle formed between the left tibia and the left thigh (femur).
+  3: 
+    - name: left_hip
+    - definition: Left hip joint angle formed between the left trunk/torso and the left thigh (femur).
+  4: 
+    - name: right_knee
+    - definition: Right knee joint angle formed between the right tibia and the right thigh (femur).
+  5: 
+    - name: right_hip
+    - definition: Right hip joint angle formed between the right trunk/torso and the right thigh (femur).
+  6: 
+    - name: body_length
+    - definition: Distance between the midpoint of the left and right shoulder joints and the midpoint of the left and right hip joints.
+  7: 
+    - name: left_torso-arm
+    - definition: Left shoulder joint angle formed between the left humerus and the left trunk/torso.
+  8: 
+    - name: right_torso-arm
+    - definition: Right shoulder joint angle formed between the right humerus and the right trunk/torso.
+flow_dim: 50
+dataset: 
+  split_base_num: 48
+  caption: Caption_explain_no_barbell
+vae: 
+  block_hidden_size: 128 # hidden size of the blocks in the network
+  num_residual_layers: 3 # number of residual layers in the model
+  res_hidden_size: 256 # hidden size of the residual layers
+  embedding_dim: 64 # dimension of the embeddings
+  epoch: 10000
+diffusion: 
+  denoiser: DiT
+  backbone: flowmatching

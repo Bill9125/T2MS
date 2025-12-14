@@ -146,7 +146,7 @@ class Transformer(nn.Module):
         # pos_embed = get_sinusoidal_positional_embeddings(6,64)
         # self.pos_embed = torch.nn.Parameter(pos_embed, requires_grad=False)
 
-        self.layers = nn.ModuleList([Transformerlayer() for _ in range(4)])
+        self.layers = nn.ModuleList([Transformerlayer() for _ in range(6)])
         self.unpatch = InverseLatentEmbedding(embed_dim=emb_size)
 
 

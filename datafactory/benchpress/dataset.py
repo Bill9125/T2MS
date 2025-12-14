@@ -69,16 +69,6 @@ class BenchpressT2SDataset(Dataset):
                 # [n_f, T]
                 x_nfT = torch.stack(seqs_T, dim=0)
                 
-                # 正規化每個特徵序列到 [0, 1]
-                for i in range(x_nfT.size(0)):  # 對每個特徵
-                    feat = x_nfT[i]  # [T]
-                    min_val = feat.min()
-                    max_val = feat.max()
-                    if max_val > min_val:  # 避免除以零
-                        x_nfT[i] = (feat - min_val) / (max_val - min_val)
-                    else:
-                        x_nfT[i] = 0.0  # 如果序列值全部相同，設為 0
-                
                 # # 在插值前先對每個特徵做平滑處理
                 # Tcur = x_nfT.size(1)
                 # if Tcur >= 5:  # 確保序列長度足夠進行平滑

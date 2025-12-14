@@ -12,9 +12,8 @@ import numpy as np
 import math
 from pretrained_mylavae import plot_pca_tsne
 import json
-from utils import get_cfg
+from utils import get_cfg, RearV_BenchpressAnimator, TopV_BenchpressAnimator
 from myevaluation import calculate_mse, normalize
-from visualize.benchpress import RearV_BenchpressAnimator, TopV_BenchpressAnimator
 from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 from sklearn.linear_model import LinearRegression
 from sklearn.pipeline import Pipeline
