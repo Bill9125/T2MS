@@ -46,19 +46,19 @@ features:
 mistakes:
   0:
     - name: wrist_bending_backward
-    - definition: Wrist bending backward
+    - definition: 
   1:
     - name: tilting_to_the_left
-    - definition: Tilting to the left
+    - definition: 
   2:
     - name: tilting_to_the_right
-    - definition: Tilting to the right
+    - definition: 
   3:
     - name: scapular_protraction
-    - definition: Scapular protraction
+    - definition: 
   4:
     - name: elbows_flaring
-    - definition: Elbows flaring
+    - definition: 
 
 flow_dim: 128 # embedding dim flow into/in diffusion
 dataset: 
