@@ -12,7 +12,7 @@ def get_feature_cfg(args):
     feature_explaination = {}
     with open(args.config, 'r') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
-        f = config[args.sport]['features']
+        f = config['features']
         for id, [name, defn] in f.items():
             feature_list[f'feature_{id}'] = name['name']
             feature_explaination[f'feature_{id}'] = defn['definition']
@@ -23,10 +23,10 @@ if __name__ == "__main__":
     parser.add_argument('--data_path', type=str)
     parser.add_argument('--output_root', type=str)
     parser.add_argument('--sport', type=str, choices=['deadlift', 'benchpress'])
-    parser.add_argument('--config', type=str, default='config.yaml')
     args = parser.parse_args()
+    args.config = path.join('config', f'{args.sport}.yaml')
     feature, _ = get_feature_cfg(args)
-            
+
     if args.sport == 'deadlift':
         from deadlift import FeatureMerger
         class_dir = glob.glob(path.join(args.data_path, '*'))

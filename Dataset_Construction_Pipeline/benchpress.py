@@ -1,6 +1,7 @@
 import os.path as path
 import numpy as np
 import os, glob, json, ast, csv
+from scipy.signal import butter, filtfilt
 
 class FeatureMerger:
     def __init__(self, class_dir, output_root, multi_error_path, feature):
@@ -46,7 +47,9 @@ class FeatureMerger:
                     all_subject_feature[f'{path.basename(subject)}_{path.basename(dir)}'] = all_angle_view_feature
 
         all_subject_feature = self.sort_features(all_subject_feature)
-        with open(path.join(output_root, 'data.json'), "w", encoding="utf-8") as f:
+        all_subject_feature = self.filter_features(all_subject_feature)
+        
+        with open(path.join(output_root, 'smoothdata.json'), "w", encoding="utf-8") as f:
             json.dump(all_subject_feature, f, indent=4)
         
     def sort_features(self, d):
@@ -56,6 +59,27 @@ class FeatureMerger:
             return [self.sort_features(i) for i in d]
         else:
             return d
+
+    def filter_features(self, all_subject_feature):
+        """
+        對所有特徵進行 Butterworth 低通濾波 (1Hz)
+        """
+        fs = 30          # 影像 / 骨架 FPS
+        cutoff = 1       # 依照 filter_test.py L20 的設定
+        order = 4
+        b, a = butter(order, cutoff / (fs / 2), btype='low')
+
+        for subject, clips in all_subject_feature.items():
+            for clip, features in clips.items():
+                for feature_name, data in features.items():
+                    # 確保數據長度足以進行濾波 (通常需要 > 3 * max(len(a), len(b)))
+                    if isinstance(data, list) and len(data) > 30:
+                        y = np.array(data, dtype=float)
+                        # 套用雙向濾波以消除相位延遲
+                        filtered_y = filtfilt(b, a, y)
+                        features[feature_name] = filtered_y.tolist()
+        
+        return all_subject_feature
 
     def read_angle_txt(self, clips, all_angle_view_feature, angle_name):
         for clip_path in clips:

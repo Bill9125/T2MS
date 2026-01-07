@@ -12,12 +12,14 @@ def plot_filter_comparison(features, base_save_path, feature_list):
     # Set style for a more premium look
     plt.style.use('ggplot') 
     
-    filter_names = ['Original', 'Savgol', 'Twopass_Savgol', 'Butterworth']
+    filter_names = ['Original', 'Savgol', 'Twopass_Savgol', 'Butterworth_1Hz', 'Butterworth_2Hz', 'Butterworth_3Hz']
     titles = [
         'Original Feature Data', 
         'Savitzky-Golay Filtered', 
         'Two-pass Savitzky-Golay Filtered',
-        'Butterworth Filtered (filtfilt)'
+        'Butterworth Filtered (1Hz)',
+        'Butterworth Filtered (2Hz)',
+        'Butterworth Filtered (3Hz)'
     ]
     norm_options = [True, False]
     
@@ -45,21 +47,21 @@ def plot_filter_comparison(features, base_save_path, feature_list):
                 if filter_name == 'Savgol':
                     plot_data = savgol_filter(data, window_length=9, polyorder=2)
                 elif filter_name == 'Twopass_Savgol':
-                    # window_length 必須是奇數，若為 4 則改為 5
                     window_size = 5 
-                    
-                    # Forward pass
                     f_pass = savgol_filter(data, window_length=window_size, polyorder=2)
-                    # Backward pass
                     b_pass = savgol_filter(f_pass[::-1], window_length=window_size, polyorder=2)
                     plot_data = b_pass[::-1]
-                elif filter_name == 'Butterworth':
+                elif 'Butterworth' in filter_name:
                     fs = 30          # 影像 / 骨架 FPS
-                    cutoff = 5       # Hz（人類動作常用 3–6Hz）
                     order = 4
+                    # 從名字提取 cutoff: Butterworth_1Hz -> 1
+                    try:
+                        cutoff = float(filter_name.split('_')[1].replace('Hz', ''))
+                    except:
+                        cutoff = 2 # fallback
+                    
                     b, a = butter(order, cutoff / (fs / 2), btype='low')
                     plot_data = filtfilt(b, a, data)
-                    
                 else: # Original
                     plot_data = data
                 
@@ -78,7 +80,7 @@ def plot_filter_comparison(features, base_save_path, feature_list):
             plt.xlabel("Frame Index", fontsize=12)
             plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=9)
             
-            # Construct filename: e.g., filter_comparison_savgol_normalized.png
+            # Construct filename: e.g., filter_comparison_butterworth_1hz_normalized.png
             save_path = base_save_path.replace('.png', f'_{filter_name.lower()}_{norm_suffix}.png')
             plt.tight_layout()
             plt.savefig(save_path, dpi=300, bbox_inches='tight')

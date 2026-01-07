@@ -52,7 +52,7 @@ mistakes:
     - definition: 
   2:
     - name: tilting_to_the_right
-    - definition: 
+    - definition: 1. When bar_y increases right_elbow decreases faster than left_elbow in descent speed.\n2. When bar_y decreases left_elbow rises faster than right_elbow in ascent speed.\n3. Throughout the entire movement left_elbow remains consistently larger than right_elbow.
   3:
     - name: scapular_protraction
     - definition: 

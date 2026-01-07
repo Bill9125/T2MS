@@ -16,7 +16,7 @@ from scipy.signal import savgol_filter
 
 def get_summary_completion(user_prompt):
     completion = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model="gpt-5-mini",
         messages=[
             {"role": "system",
              "content": f"""
@@ -24,7 +24,7 @@ def get_summary_completion(user_prompt):
                 """},
             {"role": "user", "content": user_prompt}
         ],
-        temperature=0,
+        temperature=1,
     )
     return str(completion.choices[0].message.content).strip()
 
@@ -34,11 +34,7 @@ def get_single_feature_completion(user_prompt):
         messages=[
             {"role": "system",
              "content": f"""
-                You are an expert in biomechanics and time series analysis, specifically for resistance training exercises like the bench press.
-                Your goal is to generate granular, precise, and context-aware descriptions of the relationship between two kinematic features.
-                Focus on:
-                1. Local dynamics (rising, falling, plateaus, saddle points).
-                2. Biomechanical implications based on the feature definitions.
+                You are an expert in time series analysis. Your goal is to generate granular and precise descriptions.
                 Avoid generic summaries; strictly adhere to the data points provided.
                 """},
             {"role": "user", "content": user_prompt}
@@ -56,33 +52,38 @@ def clip_caption(features, errors, feature_list):
             "Summary": "..."
         }
     """
-
     # 做總結
     final_prompt = f"""
-    Input Data: 
-    1. **Labeled Errors** for this repetition: {errors} (e.g., ['Uneven Extension', 'Bar Path Deviation'])
-    2. **Each Single Feature Analyses**:
-    {combined_text}
-
+    You are given a set of feature time-series descriptions and a confirmed classification with possible diagnostic indicators.
     Task:
-    1. **Holistic Reconstruction**: Summarize the overall movement flow based on the single feature analyses.
-    2. **Error Diagnosis**: specifically address the "Labeled Errors". Use the provided feature evidence (local extrema, rising/falling trends) to explain *why* and *when* these errors occurred according to the <Error_Knowledge_Base>.
-    3. **Anomaly Detection**: Highlight any other notable anomalies in the data points that might contribute to these errors.
-    4. **Constraint**: The output MUST be detailed (up to 1024 tokens).
-    5. **Format**: Output ONLY in the following JSON format:
+    1. Analyze the provided feature time-series descriptions.
+    2. Identify and extract which diagnostic indicators are present in the features.
+    3. NOT to verify if the classification is correct.
+    4. The output MUST be consistent with actual feature analyses.
+    5. The output MUST be less than 1024 tokens.
+    Given the classification: tilting_to_the_right
+    Possible Diagnostic Indicators:
+    1. When 'bar_y' increases 'right_elbow' decreases faster than 'left_elbow' in descent speed.
+    2. When 'bar_y' decreases 'left_elbow' rises faster than 'right_elbow' in ascent speed.
+    3. Throughout the beginning and end stages of the movement, 'left_elbow' is larger than 'right_elbow'.
+    Given each single feature analysis
+    ```{combined_text}```
     Use the following JSON format:
     ```{formatted_json}```
     """
-    
-    start_time = time.time()
-    caption = str(get_summary_completion(final_prompt)).strip()
-    end_time = time.time()
-    cleaned = re.sub(r"^```(json)?|```$", "", caption, flags=re.MULTILINE).strip()
-    parsed = json.loads(cleaned)
-    print(f"Time taken: {end_time - start_time:.2f} seconds")
-    encoding = tiktoken.encoding_for_model("gpt-4o-mini")
-    print(f"Token count: {len(encoding.encode(final_prompt))}\n")
-    return parsed, feature_descs
+    print(final_prompt)
+    parseds = []
+    for i in range(5):
+        start_time = time.time()
+        caption = str(get_summary_completion(final_prompt)).strip()
+        end_time = time.time()
+        cleaned = re.sub(r"^```(json)?|```$", "", caption, flags=re.MULTILINE).strip()
+        parsed = json.loads(cleaned)
+        print(f"Time taken: {end_time - start_time:.2f} seconds")
+        encoding = tiktoken.encoding_for_model("gpt-5-mini")
+        print(f"Token count: {len(encoding.encode(final_prompt))}\n")
+        parseds.append(parsed)
+    return parseds, feature_descs
 
 def calculate_critical_points(sequence):
     try:
@@ -138,22 +139,19 @@ def single_feature_description(features, feature_list):
             f_data = features[f]
             f_data = savgol_filter(f_data, 5, 2)
             # f_critical_points = calculate_critical_points(f_data)
+            formatted_data = [f"{i + 1}, {value:.3f}" for i, value in enumerate(f_data)]
+            formatted_string = "\n".join(formatted_data)
             
             # 特徵與特徵文字描述 prompt
             feature_prompt = f"""
-            You are given a time series feature (kinematic data from a bench press repetition) with its values, definition, and calculated critical points:
-
-            Feature: {feature_list[f]}
-            Definition: {feature_explaination[f]}
-            Values: {list(f_data)}
-            
+            You are given a time series feature with its name and values:
+            Feature name: {feature_list[f]}
             Task:
-            1. Specifically describe behaviors at **local maxima/minima**, **saddle points**, and during **rising/falling intervals**.
-            2. Relate these dynamics back to the physical movement (e.g., "as the arm extends, the angle increases rapidly until index X").
-            3. The output must be comprehensive yet precise (max 256 tokens).
-            
-            Output:
-            Provide a detailed narrative description focusing on the flow of movement.
+            1.Summarize the observed trend in the given time series data.
+            2.The output MUST be less than 256 tokens.
+            3.The output description MUST be consistent with the actual trend characteristics of the time series.
+            Given the time series data
+            ```{formatted_string}```
             """
             
             # 提交任務到執行緒池
@@ -176,13 +174,13 @@ def plot_data_to_picture(features, save_path, feature_list):
     for feature_name, feature in features.items():
         feature = np.array(feature, dtype=float)
         feature = savgol_filter(feature, 5, 2)
-        # Min-Max normalization 到 [0,1]
-        if feature.max() != feature.min():  
-            norm_feature = (feature - feature.min()) / (feature.max() - feature.min())
-        else:
-            norm_feature = np.zeros_like(feature)  # 避免除以0
+        # # Min-Max normalization 到 [0,1]
+        # if feature.max() != feature.min():  
+        #     norm_feature = (feature - feature.min()) / (feature.max() - feature.min())
+        # else:
+        #     norm_feature = np.zeros_like(feature)  # 避免除以0
 
-        plt.plot(norm_feature, label=f'{feature_list[feature_name]}')  # 每條線自動不同顏色
+        plt.plot(feature, label=f'{feature_list[feature_name]}')  # 每條線自動不同顏色
 
     plt.xlabel("Frame")
     plt.ylabel("Value")
@@ -199,7 +197,7 @@ if __name__ == "__main__":
     parser.add_argument('--max_retries', type=int, default=3)
     args = parser.parse_args()
     args.config = os.path.join('.', 'config', args.dataset_name + '.yaml')
-    args.data_path = f'./Data/{args.dataset_name}/data.json'
+    args.data_path = f'./Data/{args.dataset_name}/smoothdata.json'
     args.output_folder = f'./Data/{args.dataset_name}/Caption_explain_no_barbell'
     load_dotenv()
     api_key = os.getenv("OPENAI_API_KEY")
@@ -235,7 +233,8 @@ if __name__ == "__main__":
                 summary, feature_descs = clip_caption(features, errors, feature_list)
                 for idx, desc in enumerate(feature_descs):
                     caption[feature_list[f'feature_{idx}']] = desc
-                caption['Summary'] = summary['Summary']
+                for i, parsed in enumerate(summary):
+                    caption[f'Summary_{i}'] = parsed['Summary']
                 if not path.exists(save_dir):
                     os.makedirs(save_dir)
                 else:
