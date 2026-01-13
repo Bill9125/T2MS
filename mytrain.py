@@ -111,12 +111,12 @@ def get_args():
     parser.add_argument('--usepretrainedvae', default=True, help='pretrained vae')
     parser.add_argument('--total_step', type=int, default=100, help='sampling from [0,1]')
     args = parser.parse_args()
+    args.config = os.path.join('config', args.dataset_name + '.yaml')
     args = get_cfg(args)
     print('pretrained vae: ', args.pretrained_model_path)
     print('checkpoint path: ', args.checkpoint_path)
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    args.save_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, args.pretrained_epc))
-    args.config = os.path.join('.', 'config', args.dataset_name + '.yaml')
+    args.save_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}_1D_patch'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, args.pretrained_epc))
     return args
 
 if __name__ == '__main__':

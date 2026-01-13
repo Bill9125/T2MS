@@ -14,10 +14,6 @@ from pretrained_mylavae import plot_pca_tsne
 import json
 from utils import get_cfg, RearV_BenchpressAnimator, TopV_BenchpressAnimator
 from myevaluation import calculate_mse, normalize
-from sklearn.preprocessing import PolynomialFeatures, StandardScaler
-from sklearn.linear_model import LinearRegression
-from sklearn.pipeline import Pipeline
-from scipy.signal import savgol_filter
 
 def save_diffusion_gif(frames, save_path, filename='diffusion.gif'):
     gif_path = os.path.join(save_path, filename)
@@ -49,23 +45,14 @@ def plot_side_by_side_comparison(args, x_1, x_t, mse_list, subjects_list):
         # 左圖：ground truth
         ax1 = plt.subplot(1, 2, 1)
         for j in range(len(x_1[i])):
-            ax1.plot(x_1[i][j], label=f"{args.features[j+3]}")
+            ax1.plot(x_1[i][j], label=f"{args.features[j]}")
         ax1.set_title('Ground Truth')
         ax1.legend()
 
         # 右圖：generated
         ax2 = plt.subplot(1, 2, 2)
         for j in range(len(x_t[i])):
-            # poly_reg = Pipeline([
-            #     ("poly_features", PolynomialFeatures(degree=2)),
-            #     ("scaler", StandardScaler()),
-            #     ("lin_reg", LinearRegression())
-            # ])
-            # X = np.arange(len(x_1[i][j])).reshape(-1, 1)
-            # poly_reg.fit(X, x_1[i][j])
-            # y_fit = poly_reg.predict(X)
-            # ax1.plot(y_fit, 'o-', label=f"{args.features[j+2]}")
-            ax2.plot(x_t[i][j], label=f"{args.features[j+3]}")
+            ax2.plot(x_t[i][j], label=f"{args.features[j]}")
         ax2.set_title('Generated')
         ax2.legend()
 
@@ -186,7 +173,7 @@ def infer(args):
             save_path = os.path.join(args.generation_save_path_result, f'sample_{batch}')
             save_result(save_path, features)
             np.save(os.path.join(save_path, f'x_t.npy'), x_t)
-            if batch == 5:
+            if batch == 2:
                 break
             
     plot_side_by_side_comparison(args, x_1_list, x_t_list, mse_list,  subjects_list)
@@ -198,20 +185,20 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=1, help='batch size')
     parser.add_argument('--save_path', type=str, default='./results/denoiser_results', help='Denoiser Model save path')
     
-    parser.add_argument('--cfg_scale', type=int, default=10, help='CFG Scale')
+    parser.add_argument('--cfg_scale', type=int, default=3, help='CFG Scale')
     parser.add_argument('--total_step', type=int, default=100, help='total step sampled from [0,1]')
 
     # for inference
-    parser.add_argument('--checkpoint_id', type=int, default=1700,help='model id')
+    parser.add_argument('--checkpoint_id', type=int, default=2500,help='model id')
     parser.add_argument('--dataset_name', type=str, choices=['deadlift', 'benchpress'], help='dataset name')
     parser.add_argument('--run_time', type=int, default=1, help='inference run time')
     args = parser.parse_args()
     args.config = os.path.join('.', 'config', args.dataset_name +'.yaml')
     args = get_cfg(args)
-    args.pretrainedvae_path = os.path.join('./results/saved_pretrained_models', f'{args.split_base_num}_{args.dataset_name}_epoch{args.pretrained_epc}_norm', 'final_model.pth')
+    args.pretrainedvae_path = os.path.join('./results/saved_pretrained_models', f'{args.split_base_num}_{args.dataset_name}_epoch{args.pretrained_epc}', 'final_model.pth')
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    args.checkpoint_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}_100'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, args.pretrained_epc), 'model_{}.pth'.format(args.checkpoint_id))
-    args.generation_save_path = os.path.join(args.save_path, 'generation', '{}_{}_{}_{}_{}_100_norm'.format(args.backbone, args.denoiser, args.dataset_name, args.cfg_scale, args.total_step))
+    args.checkpoint_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}_1D_patch'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, args.pretrained_epc), 'model_{}.pth'.format(args.checkpoint_id))
+    args.generation_save_path = os.path.join(args.save_path, 'generation', '{}_{}_{}_{}_{}_1D_patch'.format(args.backbone, args.denoiser, args.dataset_name, args.cfg_scale, args.total_step))
     
     print('pretrained vae path: ', args.pretrainedvae_path)
     print('checkpoint path: ', args.checkpoint_path)

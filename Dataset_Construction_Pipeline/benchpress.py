@@ -6,6 +6,7 @@ from scipy.signal import butter, filtfilt
 class FeatureMerger:
     def __init__(self, class_dir, output_root, multi_error_path, feature):
         self.reverse_feature = {v: k for k, v in feature.items()}
+        self.feature_order = list(feature.keys())
         with open(multi_error_path, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             me_subject = {}
@@ -54,7 +55,12 @@ class FeatureMerger:
         
     def sort_features(self, d):
         if isinstance(d, dict):
-            return {k: self.sort_features(v) for k, v in sorted(d.items(), key=lambda x: int(x[0].split("_")[-1]) if "feature_" in x[0] else x[0])}
+            # Sort features based on the provided order if they exist in feature_order, otherwise alphabetical
+            return {k: self.sort_features(v) for k, v in sorted(
+                d.items(), 
+                key=lambda x: (0, self.feature_order.index(x[0])) if x[0] in self.feature_order 
+                else (1, x[0])
+            )}
         elif isinstance(d, list):
             return [self.sort_features(i) for i in d]
         else:
@@ -95,8 +101,6 @@ class FeatureMerger:
 
     def extract_lateral_view_feature(self, lines):
         data = np.array([[float(x) for x in line.split(',')[1:3]] for line in lines])
-        third_col = (data[:, 0] / data[:, 1]).reshape(-1, 1)
-        data = np.hstack([data, third_col])
         return data
 
     def extract_rear_view_feature(self, lines):
@@ -145,10 +149,9 @@ class FeatureMerger:
                     all_angle_view_feature[clip] = {}
                     
                 if view == 'lateral_view':
-                    data = self.extract_lateral_view_feature(lines) # [bar_x, bar_y, barx/bar_y]
+                    data = self.extract_lateral_view_feature(lines) # [bar_x, bar_y]
                     all_angle_view_feature[clip][self.reverse_feature['bar_x']] = data[:,0].tolist()
                     all_angle_view_feature[clip][self.reverse_feature['bar_y']] = data[:,1].tolist()
-                    all_angle_view_feature[clip][self.reverse_feature['barx/bar_y']] = data[:,2].tolist()
                     
                 elif view == 'rear_view':
                     data = self.extract_rear_view_feature(lines) # [left_shoulder_y, right_shoulder_y]
@@ -185,5 +188,5 @@ class FeatureMerger:
                 left_shoulder = pts[1]
                 line_start = np.array(right_shoulder)
                 line_end = np.array(left_shoulder)
-                distances.append([self.perpendicular_distance(np.array(right_wrist), line_start, line_end), self.perpendicular_distance(np.array(left_wrist), line_start, line_end)])
+                distances.append([self.perpendicular_distance(np.array(left_wrist), line_start, line_end), self.perpendicular_distance(np.array(right_wrist), line_start, line_end)])
         return distances

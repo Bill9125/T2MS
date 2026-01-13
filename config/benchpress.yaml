@@ -1,7 +1,7 @@
 dataset_root: ./Data
 general_seed: 2025
 
-input_dim: 10
+input_dim: 12
 features: 
   0: 
     - name: bar_x
@@ -10,36 +10,33 @@ features:
     - name: bar_y
     - definition: Vertical y-axis coordinate of the barbell end in the image/frame (lateral-view).
   2: 
-    - name: barx/bar_y
-    - definition: Ratio of bar end coordinates, bar_x divided by bar_y; dimensionless.
-  3: 
     - name: left_shoulder_y
     - definition: Vertical y-axis coordinate of the left shoulder in the rear (head-back) view.
-  4: 
+  3: 
     - name: right_shoulder_y
     - definition: Vertical y-axis coordinate of the right shoulder in the rear (head-back) view.
-  5: 
+  4: 
     - name: left_dist
     - definition: Perpendicular distance from the wrist to the extended line connecting the two shoulder joints in the top-down view.
-  6: 
+  5: 
     - name: right_dist
     - definition: Perpendicular distance from the wrist to the extended line connecting the two shoulder joints in the top-down view.
-  7: 
+  6: 
     - name: left_elbow
     - definition: Elbow joint angle at the left side in the rear (head-back) view.
-  8: 
+  7: 
     - name: left_shoulder
     - definition: Shoulder joint angle at the left side in the rear (head-back) view, defined by connecting line between the two shoulder joints and upper arm.
-  9: 
+  8: 
     - name: right_elbow
     - definition: Elbow joint angle at the right side in the rear (head-back) view.
-  10: 
+  9: 
     - name: right_shoulder
     - definition: Shoulder joint angle at the right side in the rear (head-back) view, defined by connecting line between the two shoulder joints and upper arm.
-  11: 
+  10: 
     - name: left_torso-arm
     - definition: Angle at the left armpit between the torso axis and the left upper arm in the top-down view.
-  12: 
+  11: 
     - name: right_torso-arm
     - definition: Angle at the right armpit between the torso axis and the right upper arm in the top-down view.
 

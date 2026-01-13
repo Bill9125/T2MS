@@ -169,12 +169,11 @@ if __name__ == '__main__':
 
     # Model-specific parameters
     parser.add_argument('--learning_rate', type=float, default=1e-3, help='learning rate for the optimizer')
-    parser.add_argument('--config', type=str, default='config.yaml', help='model configuration')
-    # parser.add_argument('--compression_factor', type=int, default=4, help='compression factor')
-    # parser.add_argument('--commitment_cost', type=float, default=0.25, help='commitment cost used in the loss function')
-    args = get_cfg(parser.parse_args())
+    args = parser.parse_args()
+    args.config = os.path.join('config', f'{args.dataset_name}.yaml')
+    args = get_cfg(args)
 
-    save_folder_name = '{}_{}_epoch{}_norm'.format(args.split_base_num, args.dataset_name, args.pretrained_epc)
+    save_folder_name = '{}_{}_epoch{}'.format(args.split_base_num, args.dataset_name, args.pretrained_epc)
     save_dir = os.path.join(args.save_path, save_folder_name)
     os.makedirs(save_dir, exist_ok=True)
 

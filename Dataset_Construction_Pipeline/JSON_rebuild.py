@@ -14,8 +14,9 @@ def get_feature_cfg(args):
         config = yaml.load(f, Loader=yaml.FullLoader)
         f = config['features']
         for id, [name, defn] in f.items():
-            feature_list[f'feature_{id}'] = name['name']
-            feature_explaination[f'feature_{id}'] = defn['definition']
+            feat_name = name['name']
+            feature_list[feat_name] = feat_name
+            feature_explaination[feat_name] = defn['definition']
     return feature_list, feature_explaination
 
 if __name__ == "__main__":

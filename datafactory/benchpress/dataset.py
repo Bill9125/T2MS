@@ -6,7 +6,6 @@ import numpy as np
 from torch.utils.data import Dataset
 import torch.nn.functional as F
 import os.path as path
-from scipy.signal import savgol_filter
 
 class BenchpressT2SDataset(Dataset):
     """
@@ -25,12 +24,13 @@ class BenchpressT2SDataset(Dataset):
     ):
         category = ['correct', 'tilting_to_the_right', 'tilting_to_the_left', 'elbows_flaring', 'wrist_bending_backward', 'scapular_protraction']
         super().__init__()
+        print(json_path)
         with open(json_path, "r", encoding="utf-8") as f:
             all_data = json.load(f)
         self.records = []  # list of ((text, x[n_f,T], embedding[E]), dataset_idx)
         lengths = []
         max_len = 0
-        min_len = float('inf')  # 初始化為無限大
+        min_len = float('inf')
         
         for subject, clips in all_data.items():
             for clip, feat_dict in clips.items():
@@ -45,8 +45,6 @@ class BenchpressT2SDataset(Dataset):
                 seqs_T = []
                 T_list = []
                 for k in keys:
-                    if k in ['feature_0', 'feature_1', 'feature_2']:
-                        continue
                     x = torch.as_tensor(feat_dict[k], dtype=torch.float32)  # [T] 或 [T, D_f]
                     if x.dim() == 1:
                         seqs_T.append(x)
@@ -68,25 +66,6 @@ class BenchpressT2SDataset(Dataset):
 
                 # [n_f, T]
                 x_nfT = torch.stack(seqs_T, dim=0)
-                
-                # # 在插值前先對每個特徵做平滑處理
-                # Tcur = x_nfT.size(1)
-                # if Tcur >= 5:  # 確保序列長度足夠進行平滑
-                #     # 計算合適的 window_length（必須是奇數且 < Tcur）
-                #     window = min(11, Tcur)  # 最大窗口 11
-                #     if window % 2 == 0:  # 確保是奇數
-                #         window -= 1
-                #     window = max(5, window)  # 最小窗口 5
-                    
-                #     # 對每個特徵分別應用 savgol_filter
-                #     smoothed_features = []
-                #     for feat_idx in range(x_nfT.size(0)):
-                #         feat = x_nfT[feat_idx].numpy()  # [T]
-                #         # polyorder 必須小於 window_length
-                #         poly_order = min(3, window - 2)
-                #         feat_smooth = savgol_filter(feat, window_length=window, polyorder=poly_order)
-                #         smoothed_features.append(torch.from_numpy(feat_smooth))
-                #     x_nfT = torch.stack(smoothed_features, dim=0)  # [n_f, T]
                 
                 # 在訓練時，依規則對齊到 (36, 72, 144)
                 if period == 'train':

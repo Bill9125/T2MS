@@ -127,73 +127,98 @@ class Transformerlayer(nn.Module):
 class Transformer(nn.Module):
     def __init__(self, dim, embedding_dim=64):
         super().__init__()
-        # patchify
-        self.channel=1
-        self.H = dim 
-        self.W = embedding_dim
-        emb_size=128 #64
-        self.patch_size=2
-        self.patch_count=int((self.H/self.patch_size)*(self.W/self.patch_size))
-        self.conv=nn.Conv2d(in_channels=self.channel,out_channels=self.channel*self.patch_size**2,kernel_size=self.patch_size,padding=0,stride=self.patch_size)
-        self.patch_emb=nn.Linear(in_features=self.channel*self.patch_size**2,out_features=emb_size)
-        pos_embed = get_sinusoidal_positional_embeddings(self.patch_count, emb_size)
+        # dim: Time length (T)
+        # embedding_dim: Channel dimensions (C)
+        self.seq_len = dim
+        self.input_channels = embedding_dim
+        
+        # Patching Config
+        # 我們將 2D Patching 改為 1D Time-Patching
+        # 為什麼？因為特徵維度 (Channels) 不應該被切分，它們在同一時間點代表身體的整體狀態。
+        # 我們只在時間軸上進行切分。
+        self.patch_size = 2  # 每次處理 2 個時間步
+        self.embed_dim = 128 # Transformer 內部維度
+
+        # 計算 Patch 數量 = 時間長度 / Patch 大小
+        self.num_patches = self.seq_len // self.patch_size
+        
+        # 每個 Patch 的原始攤平維度 = Channel * Patch_Size
+        self.patch_input_dim = self.input_channels * self.patch_size
+
+        # Patch Embedding: 將每個 Patch 投影到 Transformer 內部維度
+        # 輸入: [B, Patch_Input_Dim, Num_Patches] -> 輸出: [B, Embed_Dim, Num_Patches]
+        # 這裡使用 Conv1d 作為 Patch Projection，步長 = Patch_Size 實現不重疊切分
+        self.patch_proj = nn.Conv1d(
+            in_channels=self.input_channels, 
+            out_channels=self.embed_dim, 
+            kernel_size=self.patch_size, 
+            stride=self.patch_size
+        )
+
+        pos_embed = get_sinusoidal_positional_embeddings(self.num_patches, self.embed_dim)
         self.pos_embed = torch.nn.Parameter(pos_embed, requires_grad=False)
-        self.ln = nn.LayerNorm(emb_size)
-        self.linear_emb_to_patch = nn.Linear(emb_size, self.channel * self.patch_size ** 2)
-
-
-        self.time_emb = TimeEmbedding(dim=emb_size)
-        # pos_embed = get_sinusoidal_positional_embeddings(6,64)
-        # self.pos_embed = torch.nn.Parameter(pos_embed, requires_grad=False)
+        
+        self.time_emb = TimeEmbedding(dim=self.embed_dim)
 
         self.layers = nn.ModuleList([Transformerlayer() for _ in range(6)])
-        self.unpatch = InverseLatentEmbedding(embed_dim=emb_size)
-
-
+        
+        self.ln = nn.LayerNorm(self.embed_dim)
+        
+        # Output Projection: 將 Transformer 輸出還原回原始維度
+        # Linear: Embed_Dim -> Patch_Input_Dim
+        self.output_proj = nn.Linear(self.embed_dim, self.patch_input_dim)
 
         self.initialize_weights()
 
-
-
     def forward(self, input: torch.Tensor, t: torch.Tensor, text_input):
         """
-                x: (B, M, N) tensor of input latent (batch, latent num:4, latent dim:64)
-                t: (B,) tensor of diffusion timesteps
-                text_input:
-                """
-        # x = input.permute(0, 2, 1)
-        # x = x + self.pos_embed
-        x = input.permute(0, 2, 1)
-        x = x.unsqueeze(1)
-        x = self.conv(x)  # (batch,new_channel,patch_count,patch_count)
-        x = x.permute(0, 2, 3, 1)  # (batch,patch_count,patch_count,new_channel)
-        x = x.view(x.size(0), self.patch_count, x.size(3))  # (batch,patch_count**2,new_channel)
-        x = self.patch_emb(x)  # (batch,patch_count**2,emb_size)
-        x = x + self.pos_embed  # (batch,patch_count**2,emb_size)
+        input: (B, Channels, Time) -> 注意這裡預期輸入是 [B, C, T]
+        t: (B,) tensor of diffusion timesteps
+        text_input: Text embedding
+        """
+        # input shape: [B, C, T]
+        # 1. Patchify using Conv1d
+        # x shape: [B, Embed_Dim, Num_Patches]
+        x = self.patch_proj(input) 
+        
+        # Change to sequence format: [B, Num_Patches, Embed_Dim]
+        x = x.transpose(1, 2)
+        
+        # 2. Add Positional Embedding
+        x = x + self.pos_embed
 
-        t = self.time_emb(t)
-
-        c = t
+        # 3. Process Time & Text Conditioning
+        t_emb = self.time_emb(t)
+        c = t_emb
         if text_input is not None:
-            c = t + text_input
+            c = c + text_input
+            
+        # 4. Transformer Blocks
         for layer in self.layers:
             x = layer(x, c)
 
-        x = self.ln(x)
-        x = self.linear_emb_to_patch(x)
-        x = x.view(x.size(0), int(self.H/self.patch_size), int(self.W/self.patch_size), self.channel, self.patch_size, self.patch_size)
-        x = x.permute(0, 3, 1, 2, 4, 5)  # (batch,channel,patch_count(H),patch_count(W),patch_size(H),patch_size(W))
-        x = x.permute(0, 1, 2, 4, 3, 5)  # (batch,channel,patch_count(H),patch_size(H),patch_count(W),patch_size(W))
-        x = x.reshape(x.size(0), self.channel, self.H,
-                      self.W)  # (batch,channel,img_size,img_size)
-        x = x.squeeze(1)
-        x = x.permute(0, 2, 1)
-
-
+        # 5. Final output processing
+        x = self.ln(x) # [B, Num_Patches, Embed_Dim]
+        
+        # 6. Unpatchify (还原)
+        # 投影回原始 Patch 大小: [B, Num_Patches, C * Patch_Size]
+        x = self.output_proj(x)
+        
+        # Reshape 回 [B, Num_Patches, C, Patch_Size]
+        B, N, _ = x.shape
+        x = x.view(B, N, self.input_channels, self.patch_size)
+        
+        # Permute to [B, C, Num_Patches, Patch_Size]
+        x = x.permute(0, 2, 1, 3)
+        
+        # Flatten time dim: [B, C, T]
+        x = x.reshape(B, self.input_channels, self.patch_size * self.num_patches)
+        
         return x
+
     def initialize_weights(self):
         def _basic_init(module):
-            if isinstance(module, nn.Linear):
+            if isinstance(module, nn.Linear) or isinstance(module, nn.Conv1d):
                 torch.nn.init.xavier_uniform_(module.weight)
                 if module.bias is not None:
                     nn.init.constant_(module.bias, 0)
