@@ -12,7 +12,7 @@ import numpy as np
 import math
 from pretrained_mylavae import plot_pca_tsne
 import json
-from utils import get_cfg, RearV_BenchpressAnimator, TopV_BenchpressAnimator
+from utils import get_cfg, RearV_BenchpressAnimator, TopV_BenchpressAnimator, LateralV_BenchpressAnimator, FullViewBenchpressAnimator
 from myevaluation import calculate_mse, normalize
 
 def save_diffusion_gif(frames, save_path, filename='diffusion.gif'):
@@ -34,25 +34,25 @@ def save_diffusion_gif(frames, save_path, filename='diffusion.gif'):
     imageio.mimsave(gif_path, images, duration=0.5)  # 可調整 duration
     print(f'GIF saved to {gif_path}')
 
-def plot_side_by_side_comparison(args, x_1, x_t, mse_list, subjects_list):
+def plot_side_by_side_comparison(args, x_1_list, x_t_list, mse_list, subjects_list):
     save_path = args.generation_save_path_result
-    for i in range(len(x_1)):
-        fig_path = os.path.join(save_path, f'sample_{i}.jpg')
+    for i in range(len(x_1_list)):
+        fig_path = os.path.join(save_path, f'{subjects_list[i]}.jpg')
         plt.clf()
         plt.figure(figsize=(12, 6))
         plt.suptitle(f'{subjects_list[i]} {mse_list[i]:.4f}', fontsize=10)
 
         # 左圖：ground truth
         ax1 = plt.subplot(1, 2, 1)
-        for j in range(len(x_1[i])):
-            ax1.plot(x_1[i][j], label=f"{args.features[j]}")
+        for j in range(len(x_1_list[i])):
+            ax1.plot(x_1_list[i][j], label=f"{args.features[j]}")
         ax1.set_title('Ground Truth')
         ax1.legend()
 
         # 右圖：generated
         ax2 = plt.subplot(1, 2, 2)
-        for j in range(len(x_t[i])):
-            ax2.plot(x_t[i][j], label=f"{args.features[j]}")
+        for j in range(len(x_t_list[i])):
+            ax2.plot(x_t_list[i][j], label=f"{args.features[j]}")
         ax2.set_title('Generated')
         ax2.legend()
 
@@ -64,10 +64,8 @@ def save_result(root, features):
     # save predict sample
     os.makedirs(root, exist_ok=True)
     json_path = os.path.join(root, f'data.json')
-    rear = os.path.join(root, f'rear.gif')
-    top = os.path.join(root, f'top.gif')
-    RearV_BenchpressAnimator(features).animate(rear)
-    TopV_BenchpressAnimator(features).animate(top)
+    full_animation = os.path.join(root, f'full_view.gif')
+    FullViewBenchpressAnimator(features).animate(full_animation)
     with open(json_path, 'w') as f:
         json.dump(features, f, indent=4)
 
@@ -166,19 +164,20 @@ def infer(args):
             
             x_1_list.append(x_1)
             x_t_list.append(x_t)
-            subjects_list.append(subject)
+            subjects_list.append(subject[0])
             
             for i, key in enumerate(features.keys()):
                 features[key] = x_t[i].astype(float).tolist()
-            save_path = os.path.join(args.generation_save_path_result, f'sample_{batch}')
+            save_path = os.path.join(args.generation_save_path_result, f'{subject[0]}')
+            os.makedirs(save_path, exist_ok=True)
             save_result(save_path, features)
             np.save(os.path.join(save_path, f'x_t.npy'), x_t)
             if batch == 2:
                 break
             
-    plot_side_by_side_comparison(args, x_1_list, x_t_list, mse_list,  subjects_list)
+    plot_side_by_side_comparison(args, x_1_list, x_t_list, mse_list, subjects_list)
     plot_pca_tsne(x_1_list, x_t_list, args.generation_save_path_result)
-    return x_1_list
+    return x_1_list, subjects_list
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Inference flow matching model")
@@ -205,14 +204,15 @@ if __name__ == '__main__':
     best_result = {}
     for i in range(args.run_time):
         args.generation_save_path_result = os.path.join(args.generation_save_path, f'run_{i}')
-        x_1_list = infer(args)
+        x_1_list, subjects_list = infer(args)
     
-    # save sample
-    features = {feat : {} for feat in args.features[-args.input_dim:]}
-    for batch, x_1 in enumerate(x_1_list):
-        for i, key in enumerate(features.keys()):
-            features[key] = x_1[i].astype(float).tolist()
-        rear = os.path.join(args.generation_save_path_result, f'rear_{batch}.gif')
-        top = os.path.join(args.generation_save_path_result, f'top_{batch}.gif')
-        # RearV_BenchpressAnimator(features).animate(rear)
-        # TopV_BenchpressAnimator(features).animate(top)
+        # save sample
+        # The instruction implies that FullViewBenchpressAnimator should be called once for all results,
+        # not per batch within the save_result function.
+        # save sample
+        features = {feat : {} for feat in args.features[-args.input_dim:]}
+        for batch, x_1 in enumerate(x_1_list):
+            for i, key in enumerate(features.keys()):
+                features[key] = x_1[i].astype(float).tolist()
+            full_animation = os.path.join(args.generation_save_path_result, f'{subjects_list[batch]}.gif')
+            FullViewBenchpressAnimator(features).animate(full_animation)

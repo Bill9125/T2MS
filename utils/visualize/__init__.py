@@ -1,1 +1,1 @@
-from .benchpress import RearV_BenchpressAnimator, TopV_BenchpressAnimator
+from .benchpress import RearV_BenchpressAnimator, TopV_BenchpressAnimator, LateralV_BenchpressAnimator, FullViewBenchpressAnimator

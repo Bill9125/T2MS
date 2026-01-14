@@ -89,7 +89,7 @@ class BenchpressT2SDataset(Dataset):
                 elif not torch.is_tensor(embedding):
                     embedding = torch.as_tensor(embedding, dtype=torch.float32)
 
-                self.records.append((text, x_nfT, embedding, subject))
+                self.records.append((text, x_nfT, embedding, subject+clip))
     
     def _map_target_len(self, T: int, target_T):
         if target_T == 36:
