@@ -41,4 +41,4 @@ if __name__ == "__main__":
         class_dir = [p for p in class_dir if path.isdir(p)]
         args.multierror = path.join(args.data_path, 'multierror.csv')
         FeatureMerger(class_dir, args.output_root, args.multierror, feature)
-    # python ./Dataset_Construction_Pipeline/TS_data_rebuild.py --sport benchpress --data_path Data/public/BenchpressDataset --output_root Data/benchpress --multierror Data/public/BenchpressDataset/multierror.csv
+    

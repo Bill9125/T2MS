@@ -1,3 +1,6 @@
+# Rebuild JSON
+python ./Dataset_Construction_Pipeline/JSON_rebuild.py --sport benchpress --data_path Data/public/BenchpressDataset --output_root Data/benchpress
+
 CFG_SCALE=(3 7 10)
 TOTAL_STEP=(100 1000 10000)
 for i in "${!CFG_SCALE[@]}"; do

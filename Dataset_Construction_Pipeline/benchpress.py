@@ -50,7 +50,7 @@ class FeatureMerger:
         all_subject_feature = self.sort_features(all_subject_feature)
         all_subject_feature = self.filter_features(all_subject_feature)
         
-        with open(path.join(output_root, 'smoothdata.json'), "w", encoding="utf-8") as f:
+        with open(path.join(output_root, 'data.json'), "w", encoding="utf-8") as f:
             json.dump(all_subject_feature, f, indent=4)
         
     def sort_features(self, d):

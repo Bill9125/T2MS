@@ -28,7 +28,7 @@ class TimeEmbedding(nn.Module):
         self.dim = dim
         assert dim % 2 == 0, "Dimension must be even"
     def forward(self, t):
-        # t = t * 100.0
+        t = t * 100.0
         t = t.unsqueeze(-1)
 
         freqs = torch.pow(10000, torch.linspace(0, 1, self.dim // 2)).to(t.device)
