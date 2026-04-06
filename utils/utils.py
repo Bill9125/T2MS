@@ -36,6 +36,7 @@ def seed_everything(seed, cudnn_deterministic=False):
         torch.backends.cudnn.deterministic = True
         
 def get_cfg(args):
+    args.config = os.path.join('config', f'{args.dataset_name}.yaml')
     with open(args.config, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
         args.dataset_root = config.get('dataset_root', './Data')

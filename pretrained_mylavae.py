@@ -162,19 +162,18 @@ def inference(model, test_loader, device, save_dir, num_samples=None):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset_name', type=str, choices=['deadlift', 'benchpress'], help='dataset name')
+    parser.add_argument('--dataset_name', '-d', type=str, choices=['deadlift', 'benchpress'], help='dataset name')
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--save_path', type=str, default='results/saved_pretrained_models/', help='denoiser model save path')
     parser.add_argument('--only_inference', type=bool, default=False)
 
     # Model-specific parameters
     parser.add_argument('--learning_rate', type=float, default=1e-3, help='learning rate for the optimizer')
-    parser.add_argument('--config', type=str, default='config.yaml', help='model configuration')
     # parser.add_argument('--compression_factor', type=int, default=4, help='compression factor')
     # parser.add_argument('--commitment_cost', type=float, default=0.25, help='commitment cost used in the loss function')
     args = get_cfg(parser.parse_args())
 
-    save_folder_name = '{}_{}_epoch{}_norm'.format(args.split_base_num, args.dataset_name, args.pretrained_epc)
+    save_folder_name = '{}_{}_epoch{}'.format(args.split_base_num, args.dataset_name, args.pretrained_epc)
     save_dir = os.path.join(args.save_path, save_folder_name)
     os.makedirs(save_dir, exist_ok=True)
 

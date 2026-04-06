@@ -291,7 +291,7 @@ class TopV_BenchpressAnimator():
 
     def _all_artists(self):
         return tuple(self.lines + [self.points, self.vline_R, self.vline_L, self.hline,
-                               self.text_title, self.wrist_bridge])
+                                self.text_title, self.wrist_bridge])
 
     def _update(self, frame):
         thL = self.theta_L_list[frame]
@@ -349,3 +349,69 @@ class TopV_BenchpressAnimator():
         if output_file:
             # 需要系統已安裝 ffmpeg，Matplotlib 會呼叫對應 writer 輸出 mp4
             self.ani.save(output_file, writer="ffmpeg", fps=self.fps)
+            print(f"動畫已輸出完成：{os.path.abspath(output_file)}")
+            
+class LateralV_BenchpressAnimator():
+    def __init__(self, config: dict):
+        self.frames = [i for i in range(len(config["bar_x"]))]
+        self.bar_x = np.asarray(config["bar_x"], dtype=float)
+        self.bar_y = np.asarray(config["bar_y"], dtype=float)
+
+        # 視覺與動畫設定
+        self.figsize     = tuple(config.get("figsize", (8, 6)))
+        self.xlim        = tuple(config.get("xlim", (0, 640)))
+        self.ylim        = tuple(config.get("ylim", (0, 480)))
+        self.fps         = int(config.get("fps", 30))
+        self.interval    = int(config.get("interval", 33))
+        self.invert_y    = bool(config.get("invert_y", True))
+
+        # 建立 Figure/Axes 與 artists
+        self.fig, self.ax = plt.subplots(figsize=self.figsize)
+        self.ax.set_xlim(*self.xlim)
+        self.ax.set_ylim(*self.ylim)
+        if self.invert_y:
+            self.ax.invert_yaxis()
+        self.ax.set_aspect('equal')
+        self.ax.grid(True, linestyle='--', alpha=0.5)
+        
+        # 軌跡線條與目前位置點
+        self.trajectory_line, = self.ax.plot([], [], '-', color='tab:blue', lw=2, alpha=0.6, label='Trajectory')
+        self.bar_point,       = self.ax.plot([], [], 'o', color='tab:red', markersize=10, label='Bar')
+        
+        # 資訊文字
+        self.text_info = self.ax.text(0.02, 0.95, "", transform=self.ax.transAxes, 
+                                        fontsize=10, color='darkred', fontweight='bold', animated=True)
+
+        self.ani = None
+
+    def _init_artists(self):
+        self.trajectory_line.set_data([], [])
+        self.bar_point.set_data([], [])
+        self.text_info.set_text("")
+        return self.trajectory_line, self.bar_point, self.text_info
+
+    def _update_frame(self, i):
+        # 更新軌跡：顯示目前的累積軌跡
+        self.trajectory_line.set_data(self.bar_x[:i+1], self.bar_y[:i+1])
+        # 更新目前位置
+        self.bar_point.set_data([self.bar_x[i]], [self.bar_y[i]])
+        
+        # 更新資訊
+        self.text_info.set_text(f"Frame: {i}\n(x, y): ({self.bar_x[i]:.1f}, {self.bar_y[i]:.1f})")
+        
+        # 更新標題
+        self.ax.set_title(f"Lateral View - Bar Trajectory (Frame {i})")
+        
+        return self.trajectory_line, self.bar_point, self.text_info
+
+    def animate(self, output_file):
+        """建立動畫並輸出 mp4 檔案。"""
+        self.ani = animation.FuncAnimation(
+            self.fig, self._update_frame,
+            frames=len(self.frames),
+            init_func=self._init_artists,
+            blit=True, interval=self.interval
+        )
+        # 使用 ffmpeg writer
+        self.ani.save(output_file, writer="ffmpeg", fps=self.fps)
+        print(f"動畫已輸出完成：{os.path.abspath(output_file)}")

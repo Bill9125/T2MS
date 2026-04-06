@@ -12,7 +12,7 @@ import numpy as np
 import math
 from pretrained_mylavae import plot_pca_tsne
 import json
-from utils import get_cfg, RearV_BenchpressAnimator, TopV_BenchpressAnimator
+from utils import get_cfg, RearV_BenchpressAnimator, TopV_BenchpressAnimator, LateralV_BenchpressAnimator
 from myevaluation import calculate_mse, normalize
 from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 from sklearn.linear_model import LinearRegression
@@ -49,23 +49,14 @@ def plot_side_by_side_comparison(args, x_1, x_t, mse_list, subjects_list):
         # 左圖：ground truth
         ax1 = plt.subplot(1, 2, 1)
         for j in range(len(x_1[i])):
-            ax1.plot(x_1[i][j], label=f"{args.features[j+3]}")
+            ax1.plot(x_1[i][j], label=f"{args.features[j]}")
         ax1.set_title('Ground Truth')
         ax1.legend()
 
         # 右圖：generated
         ax2 = plt.subplot(1, 2, 2)
         for j in range(len(x_t[i])):
-            # poly_reg = Pipeline([
-            #     ("poly_features", PolynomialFeatures(degree=2)),
-            #     ("scaler", StandardScaler()),
-            #     ("lin_reg", LinearRegression())
-            # ])
-            # X = np.arange(len(x_1[i][j])).reshape(-1, 1)
-            # poly_reg.fit(X, x_1[i][j])
-            # y_fit = poly_reg.predict(X)
-            # ax1.plot(y_fit, 'o-', label=f"{args.features[j+2]}")
-            ax2.plot(x_t[i][j], label=f"{args.features[j+3]}")
+            ax2.plot(x_t[i][j], label=f"{args.features[j]}")
         ax2.set_title('Generated')
         ax2.legend()
 
@@ -74,13 +65,16 @@ def plot_side_by_side_comparison(args, x_1, x_t, mse_list, subjects_list):
         plt.close()
         
 def save_result(root, features):
+    print(features.keys())
     # save predict sample
     os.makedirs(root, exist_ok=True)
     json_path = os.path.join(root, f'data.json')
     rear = os.path.join(root, f'rear.gif')
     top = os.path.join(root, f'top.gif')
+    lateral = os.path.join(root, f'lateral.gif')
     RearV_BenchpressAnimator(features).animate(rear)
     TopV_BenchpressAnimator(features).animate(top)
+    LateralV_BenchpressAnimator(features).animate(lateral)
     with open(json_path, 'w') as f:
         json.dump(features, f, indent=4)
 
@@ -129,9 +123,12 @@ def infer(args):
             features = {feat : {} for feat in args.features[-args.input_dim:]}
             print(f'Generating {batch}th Batch TS...')
 
-            y, x_1, embedding, subject = data
+            y, x_1, embedding, subject, clip = data
             y_list.append(y)
-            print(y)
+            sub_str = subject[0] if isinstance(subject, tuple) else subject
+            clip_str = clip[0] if isinstance(clip, tuple) else clip
+            y_str = y[0] if isinstance(y, tuple) else y
+            print(f"[{batch}] Subject/Error: {sub_str} | Clip: {clip_str} | Text: {y_str}")
             x_1 = x_1.float().to(device)
             embedding = embedding.float().to(device)
 
@@ -173,20 +170,30 @@ def infer(args):
             x_1 = x_1.detach().cpu().numpy().squeeze()
             x_t = x_t.detach().cpu().numpy().squeeze()
             
+            # 加上 Savitzky-Golay 濾波器進行後處理平滑
+            # window_length=7, polyorder=2 是消除高頻雜訊但不改變物理軌跡的黃金比例
+            try:
+                x_t = savgol_filter(x_t, window_length=7, polyorder=2, axis=-1)
+            except Exception as e:
+                # 若時間序列短於 window_length 時的保護機制
+                pass
+            
             mse = calculate_mse(np.expand_dims(normalize(x_1), 0), np.expand_dims(normalize(x_t), 0))
             mse_list.append(mse)
             print(f'Batch {batch} MSE: {mse}')
             
             x_1_list.append(x_1)
             x_t_list.append(x_t)
-            subjects_list.append(subject)
+            sub_str = subject[0] if isinstance(subject, tuple) else subject
+            clip_str = clip[0] if isinstance(clip, tuple) else clip
+            subjects_list.append(f"{sub_str}_{clip_str}")
             
             for i, key in enumerate(features.keys()):
                 features[key] = x_t[i].astype(float).tolist()
             save_path = os.path.join(args.generation_save_path_result, f'sample_{batch}')
             save_result(save_path, features)
             np.save(os.path.join(save_path, f'x_t.npy'), x_t)
-            if batch == 5:
+            if batch == 10:
                 break
             
     plot_side_by_side_comparison(args, x_1_list, x_t_list, mse_list,  subjects_list)
@@ -202,16 +209,16 @@ if __name__ == '__main__':
     parser.add_argument('--total_step', type=int, default=100, help='total step sampled from [0,1]')
 
     # for inference
-    parser.add_argument('--checkpoint_id', type=int, default=1700,help='model id')
-    parser.add_argument('--dataset_name', type=str, choices=['deadlift', 'benchpress'], help='dataset name')
-    parser.add_argument('--run_time', type=int, default=1, help='inference run time')
+    parser.add_argument('--checkpoint_id', type=int, default=2500,help='model id')
+    parser.add_argument('--dataset_name', '-d', type=str, choices=['deadlift', 'benchpress'], help='dataset name')
+    parser.add_argument('--run_time', type=int, default=5, help='inference run time')
     args = parser.parse_args()
     args.config = os.path.join('.', 'config', args.dataset_name +'.yaml')
     args = get_cfg(args)
-    args.pretrainedvae_path = os.path.join('./results/saved_pretrained_models', f'{args.split_base_num}_{args.dataset_name}_epoch{args.pretrained_epc}_norm', 'final_model.pth')
+    args.pretrainedvae_path = os.path.join('./results/saved_pretrained_models', f'{args.split_base_num}_{args.dataset_name}_epoch{args.pretrained_epc}', 'final_model.pth')
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    args.checkpoint_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}_100'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, args.pretrained_epc), 'model_{}.pth'.format(args.checkpoint_id))
-    args.generation_save_path = os.path.join(args.save_path, 'generation', '{}_{}_{}_{}_{}_100_norm'.format(args.backbone, args.denoiser, args.dataset_name, args.cfg_scale, args.total_step))
+    args.checkpoint_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, args.pretrained_epc), 'model_{}.pth'.format(args.checkpoint_id))
+    args.generation_save_path = os.path.join(args.save_path, 'generation', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.cfg_scale, args.total_step))
     
     print('pretrained vae path: ', args.pretrainedvae_path)
     print('checkpoint path: ', args.checkpoint_path)

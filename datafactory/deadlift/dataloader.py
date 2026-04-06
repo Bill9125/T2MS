@@ -31,7 +31,7 @@ def custom_collate_fn(batch):
     batches = []
     for idx, data_list in grouped_data.items():
         if data_list:
-            batch_texts, batch_xs, batch_embeddings, subjects = zip(*data_list)
+            batch_texts, batch_xs, batch_embeddings, subjects, clips = zip(*data_list)
             batch_texts = [torch.from_numpy(text) if isinstance(text, np.ndarray) else text for text in batch_texts]
             batch_subjects = [torch.from_numpy(subject) if isinstance(subject, np.ndarray) else subject for subject in subjects]
             batch_xs = torch.stack(
@@ -40,7 +40,8 @@ def custom_collate_fn(batch):
             batch_embeddings = torch.stack(
                 [torch.from_numpy(embedding) if isinstance(embedding, np.ndarray) else embedding for embedding in batch_embeddings]
             )
-            batches.append((batch_texts, batch_xs, batch_embeddings, batch_subjects))
+            batch_clips = [torch.from_numpy(clip) if isinstance(clip, np.ndarray) else clip for clip in clips]
+            batches.append((batch_texts, batch_xs, batch_embeddings, batch_subjects, batch_clips))
     return batches
 
 def loader_provider(args, period='train'):

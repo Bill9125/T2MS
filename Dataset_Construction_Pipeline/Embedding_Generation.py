@@ -25,8 +25,12 @@ def process_clip(client: openai.OpenAI, clip_dir: str) -> None:
     with open(cap_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    text = data.get("Summary", "")
-    data["embedding"] = get_embedding(client, text)
+    text = data.get("Summary_0", "")
+    
+    # 檢查是否有 embedding，或者如果以前殘留的舊 embedding 長度不是 128，就需要重新生成
+    existing_emb = data.get("embedding")
+    if not existing_emb or type(existing_emb) is not list or len(existing_emb) != 128:
+        data["embedding"] = get_embedding(client, text)
 
     with open(cap_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
@@ -38,10 +42,11 @@ def main(caption_data_path: str) -> None:
 
     # 收集所有 clip 目錄
     subjects = glob.glob(path.join(caption_data_path, "*"))
-    clip_dirs = [
-        clip for subj in subjects
-        for clip in glob.glob(path.join(subj, "*"))
-    ]
+    clip_dirs = []
+    for subj in subjects:
+        if "correct" in subj:
+            continue
+        clip_dirs.extend(glob.glob(path.join(subj, "*")))
 
     # 建立執行緒池並顯示進度
     with ThreadPoolExecutor(max_workers=10) as pool:
@@ -56,7 +61,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--caption_data_path",
-        default="./Data/deadlift/Caption_explain_no_barbell_100",
+        default="./Data/benchpress/Caption_explain",
         help="subject 資料夾根路徑")
     args = parser.parse_args()
     main(args.caption_data_path)

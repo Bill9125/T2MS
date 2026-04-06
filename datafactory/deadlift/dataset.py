@@ -6,6 +6,7 @@ import numpy as np
 from torch.utils.data import Dataset
 import torch.nn.functional as F
 import os.path as path
+import os
 
 class DeadliftT2SDataset(Dataset):
     """
@@ -34,10 +35,14 @@ class DeadliftT2SDataset(Dataset):
         for subject, clips in all_data.items():
             for clip, feat_dict in clips.items():
                 caption_path = path.join(caption_root, subject, clip, 'caption.json')
-                with open(caption_path, 'r', encoding="utf-8") as f:
-                    data = json.load(f)
-                    text = data['Summary']
-                    embedding = data['embedding']
+                if not os.path.exists(caption_path):
+                    text = ""
+                    embedding = np.zeros(emb_dim, dtype=np.float32)
+                else:
+                    with open(caption_path, 'r', encoding="utf-8") as f:
+                        data = json.load(f)
+                        text = data.get('Summary', "")
+                        embedding = data.get('embedding', np.zeros(emb_dim, dtype=np.float32))
                     
                 # 收集同一個 clip 內所有特徵為 1D 時序 [T]
                 keys = feat_dict.keys()
@@ -92,7 +97,7 @@ class DeadliftT2SDataset(Dataset):
                 elif not torch.is_tensor(embedding):
                     embedding = torch.as_tensor(embedding, dtype=torch.float32)
 
-                self.records.append((text, x_nfT, embedding, subject))
+                self.records.append((text, x_nfT, embedding, subject, clip))
     
     def _map_target_len(self, T: int, target_T):
         if target_T == 48:

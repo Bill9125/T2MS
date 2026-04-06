@@ -7,12 +7,13 @@ from matplotlib import pyplot as plt
 import yaml
 import os
 import re
-import textwrap
 import os.path as path
 from dotenv import load_dotenv
 import numpy as np
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from scipy.signal import savgol_filter
+
+plot_lock = threading.Lock()
 
 def get_summary_completion(user_prompt):
     completion = client.chat.completions.create(
@@ -28,60 +29,88 @@ def get_summary_completion(user_prompt):
     )
     return str(completion.choices[0].message.content).strip()
 
-def get_single_feature_completion(user_prompt):
-    completion = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system",
-             "content": f"""
-                You are an expert in time series analysis. Your goal is to generate granular and precise descriptions.
-                Avoid generic summaries; strictly adhere to the data points provided.
-                """},
-            {"role": "user", "content": user_prompt}
-        ],
-        temperature=0,
-    )
-    return str(completion.choices[0].message.content).strip()
-
-def clip_caption(features, errors, feature_list):
-    # 先拿到每對 feature 的描述
-    feature_descs = single_feature_description(features, feature_list)
+def clip_caption(features, errors):
+    # 直接使用原始特徵數據，不經過 single_feature_description
+    feature_descs = []
+    for f_name, f_data in features.items():
+        formatted_data = [f"{value:.3f}" for value in f_data]
+        feature_descs.append(f"Feature {f_name}: " + ", ".join(formatted_data))
+    
     combined_text = "\n".join(feature_descs)
+    
+    indicators_list = []
+    if isinstance(errors, dict):
+        for defect_name, conditions in errors.items():
+            if conditions:
+                indicators_list.extend(conditions)
+    
+    if not indicators_list:
+        indicators_text = "    None"
+    else:
+        indicators_text = "\n".join([f"    {idx+1}. {cond}" for idx, cond in enumerate(indicators_list)])
+
     formatted_json = """
         {
-            "Summary": "..."
+            "Indicator_Evaluations": [
+                {
+                    "Indicator": "The text of the indicator",
+                    "Description": "A narrative description explaining how this pattern unfolds during the movement.",
+                    "Evidence": "Specific numerical evidence (e.g., time steps t1, t50, t101 and their values) supporting the description.",
+                    "Is_Present": true or false
+                }
+            ],
+            "Summary": "The final summary explaining the overall movement, which MUST synthesize all confirmed indicators and explicitly cite data evidence for each detected error."
         }
     """
     # 做總結
     final_prompt = f"""
-    You are given a set of feature time-series descriptions and a confirmed classification with possible diagnostic indicators.
-    Task:
-    1. Analyze the provided feature time-series descriptions.
-    2. Identify and extract which diagnostic indicators are present in the features.
-    3. NOT to verify if the classification is correct.
-    4. The output MUST be consistent with actual feature analyses.
-    5. The output MUST be less than 1024 tokens.
-    Given the classification: tilting_to_the_right
-    Possible Diagnostic Indicators:
-    1. When 'bar_y' increases 'right_elbow' decreases faster than 'left_elbow' in descent speed.
-    2. When 'bar_y' decreases 'left_elbow' rises faster than 'right_elbow' in ascent speed.
-    3. Throughout the beginning and end stages of the movement, 'left_elbow' is larger than 'right_elbow'.
-    Given each single feature analysis
+    You are given a set of RAW feature time-series data and a list of HYPOTHETICAL diagnostic indicators.
+    Your task is to act as a strict data validator.
+    Task Guidelines:
+    1. Critically evaluate EACH hypothetical diagnostic indicator against the provided raw time-series data.
+    2. NOT all hypothetical indicators will be present. You MUST be extremely strict. If there is no clear evidence in the data trends, mark it as NOT present.
+    3. Do NOT invent or hallucinate trends. Base your decision ONLY on the numerical data provided.
+    4. For each indicator, fill in 'Description' with a detailed behavioral explanation and 'Evidence' with specific data points. Then output 'Is_Present' as a boolean.
+    5. VERY IMPORTANT: When the input subject contains multiple error labels, you MUST attempt to identify and provide detailed descriptions for at least TWO or more confirmed diagnostic indicators if they are supported by the data.
+    6. The final 'Summary' MUST synthesize all confirmed results into a cohesive movement description, citing the most critical data points from the confirmed indicators.
+    
+    Hypothetical Diagnostic Indicators to verify:
+{indicators_text}
+    
+    Given raw time-series data:
     ```{combined_text}```
-    Use the following JSON format:
+    
+    Strictly use the following JSON format:
     ```{formatted_json}```
     """
-    print(final_prompt)
     parseds = []
-    for i in range(5):
+    for i in range(1):
         start_time = time.time()
-        caption = str(get_summary_completion(final_prompt)).strip()
+        caption = None
+        for attempt in range(3):
+            try:
+                caption = str(get_summary_completion(final_prompt)).strip()
+                break
+            except Exception as e:
+                print(f"API Error on attempt {attempt+1}: {e}")
+                time.sleep(2)
+        
+        if not caption:
+            continue
+            
         end_time = time.time()
         cleaned = re.sub(r"^```(json)?|```$", "", caption, flags=re.MULTILINE).strip()
-        parsed = json.loads(cleaned)
+        try:
+            parsed = json.loads(cleaned)
+        except Exception as e:
+            print(f"JSON Parse Error: {e}")
+            continue
+            
         print(f"Time taken: {end_time - start_time:.2f} seconds")
-        encoding = tiktoken.encoding_for_model("gpt-5-mini")
-        print(f"Token count: {len(encoding.encode(final_prompt))}\n")
+        encoding = tiktoken.encoding_for_model("gpt-4o")
+        input_tokens = len(encoding.encode(final_prompt))
+        output_tokens = len(encoding.encode(caption))
+        print(f"Input tokens: {input_tokens}, Output tokens: {output_tokens}\n")
         parseds.append(parsed)
     return parseds, feature_descs
 
@@ -128,68 +157,21 @@ def calculate_critical_points(sequence):
             
     return ", ".join(result) if result else "None"
 
-def single_feature_description(features, feature_list):
-    feature_names = list(features.keys())
-    
-    # 使用 ThreadPoolExecutor 來管理執行緒
-    with ThreadPoolExecutor(max_workers=11) as executor:
-        future_to_pair = {}
-        
-        for i, f in enumerate(feature_names):
-            f_data = features[f]
-            f_data = savgol_filter(f_data, 5, 2)
-            # f_critical_points = calculate_critical_points(f_data)
-            formatted_data = [f"{i + 1}, {value:.3f}" for i, value in enumerate(f_data)]
-            formatted_string = "\n".join(formatted_data)
-            
-            # 特徵與特徵文字描述 prompt
-            feature_prompt = f"""
-            You are given a time series feature with its name and values:
-            Feature name: {feature_list[f]}
-            Task:
-            1.Summarize the observed trend in the given time series data.
-            2.The output MUST be less than 256 tokens.
-            3.The output description MUST be consistent with the actual trend characteristics of the time series.
-            Given the time series data
-            ```{formatted_string}```
-            """
-            
-            # 提交任務到執行緒池
-            future = executor.submit(get_single_feature_completion, feature_prompt)
-            future_to_pair[future] = (f)
-        
-        # 收集結果
-        descriptions = []
-        for future in as_completed(future_to_pair):
-            f = future_to_pair[future]
-            try:
-                desc = future.result()
-                descriptions.append(desc)
-            except Exception as exc:
-                print(f'Feature {f} generated an exception: {exc}')
-    return descriptions
-
 def plot_data_to_picture(features, save_path, feature_list):
-    plt.figure(figsize=(12, 8))
-    for feature_name, feature in features.items():
-        feature = np.array(feature, dtype=float)
-        feature = savgol_filter(feature, 5, 2)
-        # # Min-Max normalization 到 [0,1]
-        # if feature.max() != feature.min():  
-        #     norm_feature = (feature - feature.min()) / (feature.max() - feature.min())
-        # else:
-        #     norm_feature = np.zeros_like(feature)  # 避免除以0
+    with plot_lock:
+        plt.figure(figsize=(12, 8))
+        for feature_name, feature in features.items():
+            feature = np.array(feature, dtype=float)
+            plt.plot(feature, label=f'{feature_name}')  # 每條線自動不同顏色
 
-        plt.plot(feature, label=f'{feature_list[feature_name]}')  # 每條線自動不同顏色
+        plt.xlabel("Frame")
+        plt.ylabel("Value")
+        plt.legend(fontsize=8)
+        plt.grid(True)
 
-    plt.xlabel("Frame")
-    plt.ylabel("Value")
-    plt.legend(fontsize=8)
-    plt.grid(True)
-
-    if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.close()
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            plt.close()
         
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -197,15 +179,73 @@ if __name__ == "__main__":
     parser.add_argument('--max_retries', type=int, default=3)
     args = parser.parse_args()
     args.config = os.path.join('.', 'config', args.dataset_name + '.yaml')
-    args.data_path = f'./Data/{args.dataset_name}/smoothdata.json'
-    args.output_folder = f'./Data/{args.dataset_name}/Caption_explain_no_barbell'
+    args.data_path = f'./Data/{args.dataset_name}/data.json'
+    args.output_folder = f'./Data/{args.dataset_name}/Caption_explain'
     load_dotenv()
     api_key = os.getenv("OPENAI_API_KEY")
     client = openai.OpenAI(api_key=api_key)
     feature_list = {}
     feature_explaination = {}
     error_list = {}
-    caption = {}
+    
+    def process_single_clip(subject, clip, features, error_list, feature_list, args):
+        retries = 0
+        while retries < args.max_retries:
+            try:
+                print(f'current sample is {subject} on {clip}')
+                save_dir = path.join(args.output_folder, subject, clip)
+                if not path.exists(save_dir):
+                    os.makedirs(save_dir, exist_ok=True)
+                if "correct" in subject:
+                    errors = {}
+                else:
+                    errors = {error: error_list[error] for error in error_list if error in subject}
+                    json_path = path.join(save_dir, 'caption.json')
+
+                    # 檢查這筆資料是否已經有完整的 caption.json
+                    if path.exists(json_path):
+                        try:
+                            with open(json_path, 'r', encoding="utf-8") as f:
+                                data = json.load(f)
+                                # 如果發現裡面已經有 Summary_0，這筆資料就沒有遺漏，直接 return 跳過
+                                if "Summary_0" in data:
+                                    print(f"Skipping {subject} on {clip}: Summary already exists.")
+                                    return
+                        except Exception:
+                            # 檔案可能是空的或是壞掉的，那就往下繼續重新生成
+                            pass
+                            
+                    summary, feature_descs = clip_caption(features, errors)
+
+                    local_caption = {}
+                    for i, parsed in enumerate(summary):
+                        if 'Indicator_Evaluations' in parsed:
+                            local_caption[f'Indicator_Evaluations_{i}'] = parsed['Indicator_Evaluations']
+                        if 'Summary' in parsed:
+                            local_caption[f'Summary_{i}'] = parsed['Summary']
+                    
+                    for desc in feature_descs:
+                        if ": " in desc:
+                            k, v = desc.split(": ", 1)
+                            local_caption[k] = v
+                    
+                    with open(json_path, 'w', encoding="utf-8") as f:
+                        json.dump(local_caption, f, indent=4)
+                
+                fig_path = path.join(save_dir, 'fig.jpg')
+                plot_data_to_picture(features, fig_path, feature_list)
+                print(f'current sample is {subject} on {clip} finished')
+                return 
+
+            except Exception as e:
+                print(f"Error occurred in {subject}/{clip}: {e}. Retrying {retries + 1}/{args.max_retries}...")
+                time.sleep(2)
+                retries += 1
+        
+        if retries == args.max_retries:
+            error_message = f"Failed to process sample {subject} on {clip} after {args.max_retries} retries."
+            with open('error_log.txt', 'a') as file:
+                file.write(error_message + "\n")
     
     with open(args.config, 'r') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
@@ -219,40 +259,26 @@ if __name__ == "__main__":
     
     with open(args.data_path, 'r') as f:
         data = json.load(f)
-        
+    
+    count = 0
     for subject, clips in data.items():
+        # count += 1
+        # if count > 4:
+        #     break
+        # Prepare work items
+        work_items = []
         for clip, features in clips.items():
-            string = ""
-            retries = 0
-            while retries < args.max_retries:
-                # try:
-                print(f'current sample is {subject} on {clip}')
-                save_dir = path.join(args.output_folder, subject, clip)
-                errors = [error for error in list(error_list.keys()) if error in subject]
-                txt_path = path.join(save_dir, 'caption.json')
-                summary, feature_descs = clip_caption(features, errors, feature_list)
-                for idx, desc in enumerate(feature_descs):
-                    caption[feature_list[f'feature_{idx}']] = desc
-                for i, parsed in enumerate(summary):
-                    caption[f'Summary_{i}'] = parsed['Summary']
-                if not path.exists(save_dir):
-                    os.makedirs(save_dir)
-                else:
-                    print('Already exist.')
-                    break
-                with open(txt_path, 'w', encoding="utf-8") as f:
-                    json.dump(caption, f, indent=4)
-                fig_path = path.join(save_dir, 'fig.jpg')
-                plot_data_to_picture(features, fig_path, feature_list)
-                break  # 成功後跳出重試迴圈 
-                
-                # except Exception as e:
-                #     print(f"Error occurred: {e}. Retrying {retries + 1}/{args.max_retries}...")
-                #     retries += 1
-                
-            if retries == args.max_retries:
-                error_message = f"Failed to process sample {subject} on {clip} after {args.max_retries} retries."
-                with open(f'error_log.txt', 'a') as file:
-                    file.write(error_message + "\n")
-            break
-        break
+            work_items.append((subject, clip, features))
+            # break
+            
+        # Use ThreadPoolExecutor to process clips in parallel
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [
+                executor.submit(process_single_clip, sub, clp, feat, error_list, feature_list, args) 
+                for sub, clp, feat in work_items
+            ]
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except Exception as e:
+                    print(f"Unhandled error in thread: {e}")
