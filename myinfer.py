@@ -2,6 +2,7 @@ import argparse
 import torch
 from matplotlib import pyplot as plt
 from model.denoiser.mlp import MLP
+from model.denoiser.mymlp import myMLP
 from model.denoiser.mytransformer import Transformer
 from model.pretrained.myvqvae import vqvae
 from model.backbone.rectified_flow import RectifiedFlow
@@ -11,12 +12,10 @@ import os
 import numpy as np
 import math
 from pretrained_mylavae import plot_pca_tsne
+from tqdm import tqdm
 import json
 from utils import get_cfg, RearV_BenchpressAnimator, TopV_BenchpressAnimator, LateralV_BenchpressAnimator
 from myevaluation import calculate_mse, normalize
-from sklearn.preprocessing import PolynomialFeatures, StandardScaler
-from sklearn.linear_model import LinearRegression
-from sklearn.pipeline import Pipeline
 from scipy.signal import savgol_filter
 
 def save_diffusion_gif(frames, save_path, filename='diffusion.gif'):
@@ -64,19 +63,17 @@ def plot_side_by_side_comparison(args, x_1, x_t, mse_list, subjects_list):
         plt.savefig(fig_path)
         plt.close()
         
-def save_result(root, features):
-    print(features.keys())
+def save_result(root, features, visualization=True):
     # save predict sample
     os.makedirs(root, exist_ok=True)
-    json_path = os.path.join(root, f'data.json')
-    rear = os.path.join(root, f'rear.gif')
-    top = os.path.join(root, f'top.gif')
-    lateral = os.path.join(root, f'lateral.gif')
-    RearV_BenchpressAnimator(features).animate(rear)
-    TopV_BenchpressAnimator(features).animate(top)
-    LateralV_BenchpressAnimator(features).animate(lateral)
-    with open(json_path, 'w') as f:
-        json.dump(features, f, indent=4)
+    if visualization:
+        print(features.keys())
+        rear = os.path.join(root, f'rear.gif')
+        top = os.path.join(root, f'top.gif')
+        lateral = os.path.join(root, f'lateral.gif')
+        RearV_BenchpressAnimator(features).animate(rear)
+        TopV_BenchpressAnimator(features).animate(top)
+        LateralV_BenchpressAnimator(features).animate(lateral)
 
 def infer(args):
     step = args.total_step
@@ -94,7 +91,7 @@ def infer(args):
     state = torch.load(args.pretrainedvae_path, map_location=device)  # 多半是 state_dict
     vae.load_state_dict(state)  # 正確載入
     pretrained_model = vae
-    model = {'DiT': Transformer(args.flow_dim), 'MLP': MLP}.get(args.denoiser)
+    model = {'DiT': Transformer(args.flow_dim), 'MLP': MLP(), 'myMLP': myMLP(in_channels=args.embedding_dim, cond_dim=args.flow_dim, seq_len=args.flow_dim)}.get(args.denoiser)
     if model:
         model = model.to(args.device)
     else:
@@ -119,23 +116,24 @@ def infer(args):
     x_infer_list = []
     subjects_list = []
     with (torch.no_grad()):
-        for batch, data in enumerate(test_loader):
+        for batch, data in enumerate(tqdm(test_loader, desc="Generating Batches")):
             features = {feat : {} for feat in args.features[-args.input_dim:]}
-            print(f'Generating {batch}th Batch TS...')
+            # print(f'Generating {batch}th Batch TS...')
 
             y, x_1, embedding, subject, clip = data
             y_list.append(y)
             sub_str = subject[0] if isinstance(subject, tuple) else subject
             clip_str = clip[0] if isinstance(clip, tuple) else clip
             y_str = y[0] if isinstance(y, tuple) else y
-            print(f"[{batch}] Subject/Error: {sub_str} | Clip: {clip_str} | Text: {y_str}")
+            # print(f"[{batch}] Subject/Error: {sub_str} | Clip: {clip_str} | Text: {y_str}")
             x_1 = x_1.float().to(device)
             embedding = embedding.float().to(device)
 
             x_t, before = model.encoder(x_1)
             x_t_latent_enc = x_t.clone()
             x_t = torch.randn_like(x_t).float().to(device)
-            for j in range(step):
+            # 針對擴散步數加上 tqdm (如果是第一個 batch 才顯示，避免畫面太亂，或者也可以全部顯示)
+            for j in tqdm(range(step), desc=f"Inference Steps (Batch {batch})", leave=False):
                 if args.backbone == 'flowmatching':
                     t = torch.round(torch.full((x_t.shape[0],), j * 1.0 / step, device=device) * step) / step
                     pred_uncond = model(input=x_t, t=t, text_input=None)
@@ -180,7 +178,7 @@ def infer(args):
             
             mse = calculate_mse(np.expand_dims(normalize(x_1), 0), np.expand_dims(normalize(x_t), 0))
             mse_list.append(mse)
-            print(f'Batch {batch} MSE: {mse}')
+            # print(f'Batch {batch} MSE: {mse}') 
             
             x_1_list.append(x_1)
             x_t_list.append(x_t)
@@ -190,14 +188,14 @@ def infer(args):
             
             for i, key in enumerate(features.keys()):
                 features[key] = x_t[i].astype(float).tolist()
-            save_path = os.path.join(args.generation_save_path_result, f'sample_{batch}')
-            save_result(save_path, features)
+            save_path = os.path.join(args.generation_save_path_result, f'{sub_str}_{clip_str}')
+            save_result(save_path, features, args.visualization)
             np.save(os.path.join(save_path, f'x_t.npy'), x_t)
-            if batch == 10:
-                break
+            np.save(os.path.join(save_path, f'x_1.npy'), x_1)
             
-    plot_side_by_side_comparison(args, x_1_list, x_t_list, mse_list,  subjects_list)
-    plot_pca_tsne(x_1_list, x_t_list, args.generation_save_path_result)
+    if args.visualization:
+        plot_side_by_side_comparison(args, x_1_list, x_t_list, mse_list,  subjects_list)
+        plot_pca_tsne(x_1_list, x_t_list, args.generation_save_path_result)
     return x_1_list
 
 if __name__ == '__main__':
@@ -205,13 +203,14 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=1, help='batch size')
     parser.add_argument('--save_path', type=str, default='./results/denoiser_results', help='Denoiser Model save path')
     
-    parser.add_argument('--cfg_scale', type=int, default=10, help='CFG Scale')
-    parser.add_argument('--total_step', type=int, default=100, help='total step sampled from [0,1]')
+    parser.add_argument('--cfg_scale', type=int, default=3, help='CFG Scale')
+    parser.add_argument('--total_step', type=int, default=500, help='total step sampled from [0,1]')
 
     # for inference
     parser.add_argument('--checkpoint_id', type=int, default=2500,help='model id')
     parser.add_argument('--dataset_name', '-d', type=str, choices=['deadlift', 'benchpress'], help='dataset name')
-    parser.add_argument('--run_time', type=int, default=5, help='inference run time')
+    parser.add_argument('--run_time', type=int, default=10, help='inference run time')
+    parser.add_argument('--visualization', '-v', type=bool, default=False, help='visualization')
     args = parser.parse_args()
     args.config = os.path.join('.', 'config', args.dataset_name +'.yaml')
     args = get_cfg(args)
@@ -228,11 +227,11 @@ if __name__ == '__main__':
         x_1_list = infer(args)
     
     # save sample
-    features = {feat : {} for feat in args.features[-args.input_dim:]}
-    for batch, x_1 in enumerate(x_1_list):
-        for i, key in enumerate(features.keys()):
-            features[key] = x_1[i].astype(float).tolist()
-        rear = os.path.join(args.generation_save_path_result, f'rear_{batch}.gif')
-        top = os.path.join(args.generation_save_path_result, f'top_{batch}.gif')
+    # features = {feat : {} for feat in args.features[-args.input_dim:]}
+    # for batch, x_1 in enumerate(x_1_list):
+    #     for i, key in enumerate(features.keys()):
+    #         features[key] = x_1[i].astype(float).tolist()
+    #     rear = os.path.join(args.generation_save_path_result, f'rear_{batch}.gif')
+    #     top = os.path.join(args.generation_save_path_result, f'top_{batch}.gif')
         # RearV_BenchpressAnimator(features).animate(rear)
         # TopV_BenchpressAnimator(features).animate(top)

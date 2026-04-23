@@ -175,7 +175,7 @@ def plot_data_to_picture(features, save_path, feature_list):
         
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset_name', type=str, choices=['benchpress', 'deadlift'])
+    parser.add_argument('--dataset_name', '-d', type=str, choices=['benchpress', 'deadlift'])
     parser.add_argument('--max_retries', type=int, default=3)
     args = parser.parse_args()
     args.config = os.path.join('.', 'config', args.dataset_name + '.yaml')
@@ -196,7 +196,7 @@ if __name__ == "__main__":
                 save_dir = path.join(args.output_folder, subject, clip)
                 if not path.exists(save_dir):
                     os.makedirs(save_dir, exist_ok=True)
-                if "correct" in subject:
+                if "correct" or "Correct" in subject:
                     errors = {}
                 else:
                     errors = {error: error_list[error] for error in error_list if error in subject}
@@ -260,16 +260,19 @@ if __name__ == "__main__":
     with open(args.data_path, 'r') as f:
         data = json.load(f)
     
+    # error = ['Barbell_moving_away_from_the_shins', 'Hips_rising_before_the_barbell_leaves_the_ground', 'Barbell_colliding_with_the_knees', 'Lower_back_rounding']
     count = 0
     for subject, clips in data.items():
+        # if error[count] not in subject:
+        #     continue
+        # print(subject)
         # count += 1
-        # if count > 4:
-        #     break
         # Prepare work items
         work_items = []
         for clip, features in clips.items():
+            if 'body_length' in features:
+                del features['body_length']
             work_items.append((subject, clip, features))
-            # break
             
         # Use ThreadPoolExecutor to process clips in parallel
         with ThreadPoolExecutor(max_workers=5) as executor:

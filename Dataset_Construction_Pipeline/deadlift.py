@@ -53,7 +53,7 @@ class FeatureMerger:
                                 target_key = rename_list[key][0] if key in rename_list else key
                                 self._merge_clip_features(data[target_key], all_clip_angle_features)
                         if path.basename(dataset) == 'Coordinate':
-                            coordinates = glob.glob(path.join(dataset, 'Bar', '*.csv'))
+                            coordinates = glob.glob(path.join(dataset, 'bar', '*.csv'))
                             if key in pass_list:
                                 pass_clips = pass_list[key]
                                 coordinates = [coordinate for coordinate in coordinates if self._extract_clip_number(coordinate) not in pass_clips]

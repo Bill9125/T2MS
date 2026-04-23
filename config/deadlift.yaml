@@ -1,7 +1,7 @@
 dataset_root: ./Data
 general_seed: 2025
 
-input_dim: 9
+input_dim: 8
 features:
   0:
     - name: bar_x
@@ -22,12 +22,9 @@ features:
     - name: right_hip
     - definition: Right hip joint angle formed between the right trunk/torso and the right thigh (femur).
   6:
-    - name: body_length
-    - definition: Distance between the midpoint of the left and right shoulder joints and the midpoint of the left and right hip joints.
-  7:
     - name: left_torso-arm
     - definition: Left shoulder joint angle formed between the left humerus and the left trunk/torso.
-  8:
+  7:
     - name: right_torso-arm
     - definition: Right shoulder joint angle formed between the right humerus and the right trunk/torso.
 mistakes:
@@ -49,19 +46,18 @@ mistakes:
   3:
     - name: Lower_back_rounding
     - definition:
-        - The initial value of 'body_length' is smaller than the 'body_length' value at the point where 'bar_y' reaches its minimum.
-        - 在槓鈴下降的過程中，膝蓋角度抵達最大值的80％明顯比臀部角度抵達最大值的80％還要早。
+        - During the barbell descent, the knee angles reach 80% of their maximum values significantly earlier than the hip angles reach 80% of their maximum values.
 
-flow_dim: 50
+flow_dim: 128
 dataset:
   split_base_num: 48
-  caption: Caption_explain_no_barbell
+  caption: Caption_explain
 vae:
   block_hidden_size: 128 # hidden size of the blocks in the network
   num_residual_layers: 3 # number of residual layers in the model
   res_hidden_size: 256 # hidden size of the residual layers
   embedding_dim: 64 # dimension of the embeddings
-  epoch: 10000
+  epoch: 30000
 diffusion:
   denoiser: DiT
   backbone: flowmatching

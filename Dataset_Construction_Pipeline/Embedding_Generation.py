@@ -61,7 +61,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--caption_data_path",
-        default="./Data/benchpress/Caption_explain",
+        default="./Data/deadlift/Caption_explain",
         help="subject 資料夾根路徑")
     args = parser.parse_args()
     main(args.caption_data_path)

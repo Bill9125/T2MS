@@ -6,6 +6,7 @@ from model.backbone.rectified_flow import RectifiedFlow
 from model.backbone.DDPM import DDPM
 from model.denoiser.mytransformer import Transformer
 from model.denoiser.mlp import MLP
+from model.denoiser.mymlp import myMLP
 from model.pretrained.myvqvae import vqvae
 from tqdm import tqdm
 from utils import get_cfg, plot_loss_curve, seed_everything
@@ -19,7 +20,7 @@ def train(args):
     elif args.dataset_name == 'benchpress':
         from datafactory.benchpress.dataloader import loader_provider
     train_loader, test_loader = loader_provider(args)
-    model = {'DiT': Transformer(args.flow_dim, embedding_dim=args.embedding_dim), 'MLP': MLP}.get(args.denoiser)
+    model = {'DiT': Transformer(args.flow_dim, embedding_dim=args.embedding_dim), 'MLP': MLP(), 'myMLP': myMLP(in_channels=args.embedding_dim, cond_dim=args.flow_dim, seq_len=args.flow_dim)}.get(args.denoiser)
     if model:
         model = model.to(args.device)
     else:
@@ -76,20 +77,11 @@ def train(args):
                     raise ValueError(f"Unsupported backbone type: {args.backbone}")
 
                 optimizer.zero_grad()
-                decide = torch.rand(1) < 0.3
+                decide = torch.rand(1) < 0.7
                 if decide:
                     y_text_embedding = None
                 pred = model(input=x_t, t=t, text_input=y_text_embedding)
-                # 計算原始擴散 loss
-                base_loss = backbone.loss(pred, noise_gt)
-                
-                # 新增：時間平滑度懲罰 (Temporal Smoothness Loss)
-                # 強制模型預測的值在相鄰的時間刻度 (dim=-1) 之間不能有高頻的劇烈跳變
-                diff = pred[:, :, 1:] - pred[:, :, :-1]
-                smoothness_loss = torch.mean(diff ** 2)
-                
-                # 將原 loss 與平滑 loss 相加 (0.1 是可調整的平滑權重)
-                loss = base_loss + 0.1 * smoothness_loss
+                loss = backbone.loss(pred, noise_gt)
                 loss.backward()
                 group_losses.append(loss.item())
                 optimizer.step()
@@ -110,7 +102,6 @@ def get_args():
     parser = argparse.ArgumentParser(description="Train T2S model")
     parser.add_argument('--checkpoint_path', type=str, help='checkpoint path')
     parser.add_argument('--dataset_name', '-d', type=str, choices=['deadlift', 'benchpress'], help='dataset name')
-    parser.add_argument('--pretrained_model_path', type=str, default='./results/saved_pretrained_models/36_benchpress_epoch30000/final_model.pth')
     parser.add_argument('--batch_size', type=int, default=512, help='batch_size')
     parser.add_argument('--epochs', type=int, default=20000, help='training epochs')
     parser.add_argument('--save_path', type=str, default='./results/denoiser_results', help='denoiser model save path')
@@ -121,10 +112,11 @@ def get_args():
     parser.add_argument('--total_step', type=int, default=100, help='sampling from [0,1]')
     args = parser.parse_args()
     args = get_cfg(args)
+    args.pretrained_model_path = os.path.join('./results/saved_pretrained_models/', f'{args.split_base_num}_{args.dataset_name}_epoch{args.pretrained_epc}', 'final_model.pth')
     print('pretrained vae: ', args.pretrained_model_path)
     print('checkpoint path: ', args.checkpoint_path)
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    args.save_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}_Smoothness-Loss'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, args.pretrained_epc))
+    args.save_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, args.pretrained_epc))
     args.config = os.path.join('.', 'config', args.dataset_name + '.yaml')
     return args
 

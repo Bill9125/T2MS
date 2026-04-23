@@ -1,53 +1,25 @@
+#!/bin/bash
 
-python train.py --dataset_name 'exchangerate'
+#====================================================
+# Hyperparameter Grid Search Script
+#====================================================
+DATASET="benchpress"
 
-python infer.py --dataset_name 'exchangerate_24' --cfg_scale 7.0 --total_step 100
-python infer.py --dataset_name 'exchangerate_48' --cfg_scale 12.0 --total_step 60
-python infer.py --dataset_name 'exchangerate_96' --cfg_scale 5.0 --total_step 100
-
-python evaluation.py --dataset_name 'exchangerate_24' --cfg_scale 7.0 --total_step 100
-python evaluation.py --dataset_name 'exchangerate_48' --cfg_scale 12.0 --total_step 60
-python evaluation.py --dataset_name 'exchangerate_96' --cfg_scale 5.0 --total_step 100
-
-
-
-
-
-python train.py --dataset_name 'electricity'
-
-python infer.py --dataset_name 'electricity_24' --cfg_scale 5.0 --total_step 60
-python infer.py --dataset_name 'electricity_48' --cfg_scale 5.0 --total_step 10
-python infer.py --dataset_name 'electricity_96' --cfg_scale 13.0 --total_step 30
-
-python evaluation.py --dataset_name 'electricity_24' --cfg_scale 5.0 --total_step 60
-python evaluation.py --dataset_name 'electricity_48' --cfg_scale 5.0 --total_step 10
-python evaluation.py --dataset_name 'electricity_96' --cfg_scale 13.0 --total_step 30
-
-
-
-
-python train.py --dataset_name 'traffic'
-
-python infer.py --dataset_name 'traffic_24' --cfg_scale 5.0 --total_step 100
-python infer.py --dataset_name 'traffic_48' --cfg_scale 5.0 --total_step 10
-python infer.py --dataset_name 'traffic_96' --cfg_scale 5.0 --total_step 30
-
-python evaluation.py --dataset_name 'traffic_24' --cfg_scale 5.0 --total_step 100
-python evaluation.py --dataset_name 'traffic_48' --cfg_scale 5.0 --total_step 10
-python evaluation.py --dataset_name 'traffic_96' --cfg_scale 5.0 --total_step 30
-
-
-
-
-python train.py --dataset_name 'ETTh1'
-
-python infer.py --dataset_name 'ETTh1_24' --cfg_scale 9.0 --total_step 10
-python infer.py --dataset_name 'ETTh1_48' --cfg_scale 9.0 --total_step 10
-python infer.py --dataset_name 'ETTh1_96' --cfg_scale 9.0 --total_step 10
-
-python evaluation.py --dataset_name 'ETTh1_24' --cfg_scale 9.0 --total_step 10
-python evaluation.py --dataset_name 'ETTh1_48' --cfg_scale 9.0 --total_step 10
-python evaluation.py --dataset_name 'ETTh1_96' --cfg_scale 9.0 --total_step 10
-
-
-
+# 迴圈設定：CFG 從 0 到 10，每次加 2
+for CFG in $(seq 2 2 10); do
+    # 迴圈設定：STEP 從 100 到 300，每次加 50
+    for STEP in $(seq 100 50 300); do
+        echo "=========================================================="
+        echo "🚀 Running Inference & Evaluation -> CFG_Scale: $CFG, Total_Step: $STEP"
+        echo "=========================================================="
+        
+        # 1. 執行推論 (Inference)
+        # python myinfer.py -d "$DATASET" --cfg_scale $CFG --total_step $STEP 
+        
+        # 2. 執行評估 (Evaluation)
+        python myevaluation.py -d "$DATASET" --cfg_scale $CFG --total_step $STEP --method_list C-FID,NND
+        
+        echo "✅ Finished CFG: $CFG, STEP: $STEP"
+        echo ""
+    done
+done

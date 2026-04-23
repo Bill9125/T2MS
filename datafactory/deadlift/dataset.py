@@ -41,11 +41,11 @@ class DeadliftT2SDataset(Dataset):
                 else:
                     with open(caption_path, 'r', encoding="utf-8") as f:
                         data = json.load(f)
-                        text = data.get('Summary', "")
+                        text = data.get('Summary_0', "")
                         embedding = data.get('embedding', np.zeros(emb_dim, dtype=np.float32))
                     
                 # 收集同一個 clip 內所有特徵為 1D 時序 [T]
-                keys = feat_dict.keys()
+                keys = [k for k in feat_dict.keys() if k not in ['body_length']]
                 seqs_T = []
                 T_list = []
                 for k in keys:

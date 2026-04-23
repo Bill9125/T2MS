@@ -136,7 +136,7 @@ def inference(model, test_loader, device, save_dir, num_samples=None):
         seen_batches = 0
         for batch in test_loader:
             # batch 是 List[(texts, xs, embeddings, gt_cat)]，逐組處理
-            for (texts, xs, embeddings, _) in batch:
+            for (texts, xs, embeddings, subject, clip) in batch:
                 xs = xs.float().to(device)  # [B, n_f, T]
                 loss, recon_error, reconstructed, z = model.shared_eval(xs, None, mode='test')
                 
@@ -199,7 +199,7 @@ if __name__ == '__main__':
             epoch_losses = []
             group_losses = []
             for batch in tqdm(train_loader, desc=f"Epoch {epoch+1}/{total_epochs}"):
-                for (texts, xs, embeddings, _) in batch:
+                for (texts, xs, embeddings, subject, clip) in batch:
                     xs = xs.clone().detach().float().to(device)  # [B_g, n_f, T]
                     loss, recon_error, x_recon, z = model.shared_eval(xs, optimizer, 'train')
                     group_losses.append(loss.item())
@@ -214,7 +214,7 @@ if __name__ == '__main__':
                 print(f'Saved Model from epoch: {epoch}')
                 group_losses = []
                 for batch in test_loader:
-                    for (texts, xs, embeddings, _) in batch:
+                    for (texts, xs, embeddings, subject, clip) in batch:
                         xs = xs.clone().detach().float().to(device)  # [B_g, n_f, T]
                         loss, recon_error, x_recon, z = model.shared_eval(xs, optimizer, 'test')
                         group_losses.append(loss.item())

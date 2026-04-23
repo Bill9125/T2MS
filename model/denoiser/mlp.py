@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import math
 import torch.nn.functional as F
+
 class TimeEmbedding(nn.Module):
     def __init__(self, dim):
         super(TimeEmbedding, self).__init__()
