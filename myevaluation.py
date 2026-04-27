@@ -6,12 +6,13 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
-from scipy.linalg import sqrtm
 import argparse
 import torch
 from evaluate.utils import show_with_start_divider, show_with_end_divider, write_json_data
 from utils import get_cfg
 from model.pretrained.myvqvae import vqvae
+from evaluate.cfid import CFIDMetric
+from evaluate.nnd import NNDMetric
 
 def convert_numpy(obj):
     if isinstance(obj, dict):
@@ -31,33 +32,7 @@ def normalize(x):
     x_norm = (x - min_val) / (max_val - min_val + 1e-8)
     return x_norm
 
-def calculate_fid(act1, act2):
-    mu1, sigma1 = act1.mean(axis=0), np.cov(act1, rowvar=False)
-    mu2, sigma2 = act2.mean(axis=0), np.cov(act2, rowvar=False)
-    ssdiff = np.sum((mu1 - mu2)**2.0)
-    covmean = sqrtm(sigma1.dot(sigma2))
-    if np.iscomplexobj(covmean):
-        covmean = covmean.real
-    fid = ssdiff + np.trace(sigma1 + sigma2 - 2.0 * covmean)
-    return fid
 
-def calculate_nnd(eval_repr, train_repr):
-    """
-    Calculate Nearest Neighbor Distance (NND) - Novelty Score
-    eval_repr: [N_eval, Dim]
-    train_repr: [N_train, Dim]
-    """
-    from scipy.spatial.distance import cdist
-    
-    # L2 Normalization
-    eval_repr = eval_repr / (np.linalg.norm(eval_repr, axis=1, keepdims=True) + 1e-8)
-    train_repr = train_repr / (np.linalg.norm(train_repr, axis=1, keepdims=True) + 1e-8)
-
-    # Euclidean distance matrix [N_eval, N_train]
-    distances = cdist(eval_repr, train_repr, metric='euclidean')
-    # Find minimum distance for each evaluation sample
-    min_distances = np.min(distances, axis=1)
-    return np.mean(min_distances)
 
 def plot_heatmap(root_dir, metric_name, output_name, title_suffix="", group_key="summary"):
     """
@@ -108,16 +83,19 @@ def plot_heatmap(root_dir, metric_name, output_name, title_suffix="", group_key=
     plt.title(f'Heatmap of {metric_name} {title_suffix}')
     plt.xlabel('CFG Scale')
     plt.ylabel('Total Steps')
+    # 透過 root_dir 來判別這是 fixed 還是 random 的實驗 (e.g., evaluation_fixed)
+    exp_type = os.path.basename(root_dir).replace("evaluation_", "")
+    
     # 統一儲存到 ./heatmaps 資料夾底下
     save_dir = os.path.join('.', 'heatmaps')
     os.makedirs(save_dir, exist_ok=True)
-    save_path = os.path.join(save_dir, f"{output_name}.png")
+    save_path = os.path.join(save_dir, f"{output_name}_{exp_type}.png")
     
     plt.savefig(save_path)
     plt.close()
     print(f"Heatmap saved to: {save_path}")
 
-def evaluate_data(args, ori_data, gen_data, index, result, vae_encoder=None, train_repr_my=None):
+def evaluate_data(args, ori_data, gen_data, index, result, vae_encoder=None, train_repr_my=None, cond_embs=None):
     show_with_start_divider(f"Evaluation with settings: {args}")
 
     method_list = args.method_list
@@ -152,19 +130,59 @@ def evaluate_data(args, ori_data, gen_data, index, result, vae_encoder=None, tra
         gen_repr_nnd = gen_features.flatten(start_dim=1).cpu().numpy()
 
     result[index] = {}
-    if 'C-FID' in method_list:
-        cfid = calculate_fid(ori_repr_fid, gen_repr_fid)
-        result[index]['C-FID'] = cfid
+    n_folds = getattr(args, 'n_folds', 1)
+    
+    if n_folds <= 1:
+        if 'C-FID' in method_list:
+            cfid_metric_fn = CFIDMetric()
+            result[index]['C-FID'] = cfid_metric_fn(ori_repr_fid, gen_repr_fid, cond_embs)
 
-    if 'NND' in method_list:
-        if train_repr_my is not None:
-            # Novelty: Distance from Generated to Training set
-            novelty_gen = calculate_nnd(gen_repr_nnd, train_repr_my)
-            result[index]['Novelty-Score (Gen)'] = novelty_gen            
+        if 'NND' in method_list:
+            nnd_metric_fn = NNDMetric()
+            result[index]['Novelty-Score (Gen)'] = nnd_metric_fn(gen_repr_nnd, train_repr_my)
+            if index == 'all_samples' or index.startswith('class_'):
+                result[index]['Novelty-Score (Test)'] = nnd_metric_fn(ori_repr_nnd, train_repr_my)
+    else:
+        # Bootstrapping (K-fold Test Split)
+        N = ori_repr_fid.shape[0]
+        # Only split if we have enough samples (e.g. > 10)
+        if N < 10:
+            print(f"[{index}] Not enough samples ({N}) for {n_folds}-fold split. Falling back to 1-fold.")
+            n_folds = 1
+            idx_list = [np.arange(N)]
+        else:
+            indices = np.random.permutation(N)
+            fold_size = N // n_folds
+            idx_list = [indices[k * fold_size : (k + 1) * fold_size if k < n_folds - 1 else N] for k in range(n_folds)]
             
-            # Baseline: Distance from Real Test to Training set
-            novelty_test = calculate_nnd(ori_repr_nnd, train_repr_my)
-            result[index]['Novelty-Score (Test)'] = novelty_test
+        cfid_scores, nnd_g_scores, nnd_t_scores = [], [], []
+        
+        for k, idx in enumerate(idx_list):
+            if 'C-FID' in method_list:
+                try:
+                    cfid_scores.append(CFIDMetric()(ori_repr_fid[idx], gen_repr_fid[idx], np.array(cond_embs)[idx]))
+                except Exception as e:
+                    pass
+                    
+            if 'NND' in method_list:
+                try:
+                    nnd_metric_fn = NNDMetric()
+                    nnd_g_scores.append(nnd_metric_fn(gen_repr_nnd[idx], train_repr_my))
+                    if index == 'all_samples' or index.startswith('class_'):
+                        nnd_t_scores.append(nnd_metric_fn(ori_repr_nnd[idx], train_repr_my))
+                except Exception as e:
+                    pass
+
+        # Save means and standard deviations
+        if cfid_scores:
+            result[index]['C-FID'] = float(np.mean(cfid_scores))
+            result[index]['C-FID_std'] = float(np.std(cfid_scores))
+        if nnd_g_scores:
+            result[index]['Novelty-Score (Gen)'] = float(np.mean(nnd_g_scores))
+            result[index]['Novelty-Score (Gen)_std'] = float(np.std(nnd_g_scores))
+        if nnd_t_scores:
+            result[index]['Novelty-Score (Test)'] = float(np.mean(nnd_t_scores))
+            result[index]['Novelty-Score (Test)_std'] = float(np.std(nnd_t_scores))
 
     return result
 
@@ -177,8 +195,10 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_name', '-d', type=str, default='benchpress', help='dataset name')
     parser.add_argument('--cfg_scale', type=int, default=1, help='CFG Scale')
     parser.add_argument('--total_step', type=int, default=100, help='Total sampling steps')
-    parser.add_argument('--run_time', type=int, default=1, help='Number of runs')
+    parser.add_argument('--run_time', type=int, default=10, help='Number of runs')
     parser.add_argument('--batch_size', type=int, default=32, help='Batch size for evaluation')
+    parser.add_argument('--fixed_noise', action='store_true', help='Evaluate fixed random noise dataset')
+    parser.add_argument('--n_folds', type=int, default=1, help='Number of folds to split the evaluation results to get standard deviation')
 
     args = parser.parse_args()
     args = get_cfg(args)
@@ -194,8 +214,10 @@ if __name__ == '__main__':
     vae_encoder = vae.encoder
 
     args.model_name = f'{args.backbone}_{args.denoiser}_{args.dataset_name}_{args.cfg_scale}_{args.total_step}'
-    args.generation_save_path = os.path.join(args.save_path, 'generation', args.model_name)
-    args.evaluation_save_path = os.path.join(args.save_path, 'evaluation', args.model_name)
+    
+    noise_type = "fixed" if getattr(args, 'fixed_noise', False) else "random"
+    args.generation_save_path = os.path.join(args.save_path, f'generation_{noise_type}', args.model_name)
+    args.evaluation_save_path = os.path.join(args.save_path, f'evaluation_{noise_type}', args.model_name)
 
     # Load training data for Novelty (NND) calculation
     train_repr_my = None
@@ -210,6 +232,7 @@ if __name__ == '__main__':
         
         train_repr_list = []
         train_labels_list = []
+        train_embs_list = []
         with torch.no_grad():
             for batch_data in train_loader:
                 if isinstance(batch_data, list):
@@ -223,6 +246,9 @@ if __name__ == '__main__':
                 repr_nnd = features.flatten(start_dim=1).cpu().numpy()
                 train_repr_list.append(repr_nnd)
                 
+                # 收集文字 Embedding 用於 CFID
+                train_embs_list.append(embs.cpu().numpy())
+                
                 # 收集每一筆訓練資料的錯誤標籤 (從 subject 字串中獲取)
                 for s in subs:
                     s_str = s[0] if isinstance(s, tuple) else s
@@ -230,16 +256,19 @@ if __name__ == '__main__':
         
         train_repr_my = np.concatenate(train_repr_list, axis=0)
         train_labels_my = np.array(train_labels_list)
+        train_embs_my = np.concatenate(train_embs_list, axis=0)
         print(f"Loaded {len(train_labels_my)} training labels.")
         print(f"Sample training labels: {train_labels_my[:10]}")
     else:
         train_repr_my = None
         train_labels_my = None
+        train_embs_my = None
 
 
     result = {}
     x_1_list = []
     x_t_list = []
+    emb_list = [] # 新增 Embedding 列表
 
     # 準備一個 dictionary 來將樣本按照類別 (error label) 進行分組
     grouped_samples = {}
@@ -257,12 +286,25 @@ if __name__ == '__main__':
                 
             x_t_path = os.path.join(sample_path, 'x_t.npy')
             x_1_path = os.path.join(sample_path, 'x_1.npy')
+            emb_path = os.path.join(sample_path, 'embedding.npy')
             
             if os.path.exists(x_t_path) and os.path.exists(x_1_path):
                 x_t = normalize(np.load(x_t_path))
                 x_1 = normalize(np.load(x_1_path))
+                
+                # 載入 Embedding
+                if os.path.exists(emb_path):
+                    emb = np.load(emb_path)
+                    if emb.ndim == 1:
+                        emb = np.expand_dims(emb, axis=0) # [1, Dim]
+                    if emb.ndim == 3: # 防呆
+                        emb = emb.squeeze(1)
+                else:
+                    emb = np.zeros((1, args.embedding_dim))
+                
                 x_t_list.append(x_t)
                 x_1_list.append(x_1)
+                emb_list.append(emb) # 記錄到全局列表
                 
                 # 從資料夾名稱解析 error class
                 known_classes = [
@@ -278,15 +320,16 @@ if __name__ == '__main__':
                         error_class = k_class
                         break
                 
-                # 若不在目標分類中，直接忽略個別分類評估 (直接進入下一筆)
+                # 若不在目標分類中，直接忽略個別分類評估
                 if error_class is None:
                     continue
 
                 if error_class not in grouped_samples:
-                    grouped_samples[error_class] = {'x_1': [], 'x_t': []}
+                    grouped_samples[error_class] = {'x_1': [], 'x_t': [], 'emb': []}
                 
                 grouped_samples[error_class]['x_1'].append(x_1)
                 grouped_samples[error_class]['x_t'].append(x_t)
+                grouped_samples[error_class]['emb'].append(emb)
 
     if x_t_list:
         # Align lengths with zero padding if necessary
@@ -295,9 +338,10 @@ if __name__ == '__main__':
         # 1. 跑全域評估 (Global Marginals)
         ori_data_arr = np.array([np.pad(x, ((0, 0), (0, max_len - x.shape[-1])), 'constant') for x in x_1_list])
         gen_data_arr = np.array([np.pad(x, ((0, 0), (0, max_len - x.shape[-1])), 'constant') for x in x_t_list])
+        all_embs_arr = np.concatenate(emb_list, axis=0)
         
         print(f'Original data shape: {ori_data_arr.shape}, Generated data shape: {gen_data_arr.shape}')
-        result = evaluate_data(args, ori_data_arr, gen_data_arr, 'all_samples', result, vae_encoder=vae_encoder, train_repr_my=train_repr_my)
+        result = evaluate_data(args, ori_data_arr, gen_data_arr, 'all_samples', result, vae_encoder=vae_encoder, train_repr_my=train_repr_my, cond_embs=all_embs_arr)
         
         # 2. 跑各個分類的獨立評估 (Class-Conditional Evaluation)
         print("\n--- Running Class-Conditional Evaluation ---")
@@ -310,6 +354,7 @@ if __name__ == '__main__':
             class_max_len = max(x.shape[-1] for x in data_dict['x_t'])
             class_ori_arr = np.array([np.pad(x, ((0, 0), (0, class_max_len - x.shape[-1])), 'constant') for x in data_dict['x_1']])
             class_gen_arr = np.array([np.pad(x, ((0, 0), (0, class_max_len - x.shape[-1])), 'constant') for x in data_dict['x_t']])
+            class_embs_arr = np.concatenate(data_dict['emb'], axis=0)
             
             class_train_repr = None
             if train_repr_my is not None:
@@ -318,12 +363,14 @@ if __name__ == '__main__':
                 mask = np.array([error_class in str(label) for label in train_labels_my])
                 if np.sum(mask) > 0:
                     class_train_repr = train_repr_my[mask]
+                    class_train_embs = train_embs_my[mask] 
                 else:
                     print(f"Warning: No training samples found matching class '{error_class}'. Using full train set as fallback.")
                     class_train_repr = train_repr_my
+                    class_train_embs = train_embs_my
                     
-            # 我們傳入特別過濾過的 target class_train_repr，這樣求出來的 NND 才是 Condition 命中程度
-            result = evaluate_data(args, class_ori_arr, class_gen_arr, f'class_{error_class}', result, vae_encoder=vae_encoder, train_repr_my=class_train_repr)
+            # 傳入條件文字向量進行 CFID 計算
+            result = evaluate_data(args, class_ori_arr, class_gen_arr, f'class_{error_class}', result, vae_encoder=vae_encoder, train_repr_my=class_train_repr, cond_embs=class_embs_arr)
         print("--------------------------------------------\n")
 
     if isinstance(result, dict) and result:

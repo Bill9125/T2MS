@@ -22,10 +22,10 @@ features:
     - name: right_hip
     - definition: Right hip joint angle formed between the right trunk/torso and the right thigh (femur).
   6:
-    - name: left_torso-arm
+    - name: left_torso_angle
     - definition: Left shoulder joint angle formed between the left humerus and the left trunk/torso.
   7:
-    - name: right_torso-arm
+    - name: right_torso_angle
     - definition: Right shoulder joint angle formed between the right humerus and the right trunk/torso.
 mistakes:
   0:

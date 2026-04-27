@@ -48,6 +48,7 @@ def custom_collate_fn(batch):
 def loader_provider(args, period='train'):
     if period == 'train':
         dataset1 = BenchpressT2SDataset(
+            feat_name=args.features,
             json_path=os.path.join(args.dataset_root, args.dataset_name, 'data.json'),
             caption_root = os.path.join(args.dataset_root, args.dataset_name, args.caption),
             emb_dim=args.flow_dim,
@@ -55,6 +56,7 @@ def loader_provider(args, period='train'):
             period=period
         )
         dataset2 = BenchpressT2SDataset(
+            feat_name=args.features,
             json_path=os.path.join(args.dataset_root, args.dataset_name, 'data.json'),
             caption_root = os.path.join(args.dataset_root, args.dataset_name, args.caption),
             emb_dim=args.flow_dim,
@@ -62,6 +64,7 @@ def loader_provider(args, period='train'):
             period=period
         )
         dataset3 = BenchpressT2SDataset(
+            feat_name=args.features,
             json_path=os.path.join(args.dataset_root, args.dataset_name, 'data.json'),
             caption_root = os.path.join(args.dataset_root, args.dataset_name, args.caption),
             emb_dim=args.flow_dim,
@@ -73,6 +76,7 @@ def loader_provider(args, period='train'):
     
     elif period == 'test':
         dataset = BenchpressT2SDataset(
+            feat_name=args.features,
             json_path=os.path.join(args.dataset_root, args.dataset_name, 'data.json'),
             caption_root = os.path.join(args.dataset_root, args.dataset_name, args.caption),
             emb_dim=args.flow_dim,

@@ -15,7 +15,6 @@ from pretrained_mylavae import plot_pca_tsne
 from tqdm import tqdm
 import json
 from utils import get_cfg, RearV_BenchpressAnimator, TopV_BenchpressAnimator, LateralV_BenchpressAnimator
-from myevaluation import calculate_mse, normalize
 from scipy.signal import savgol_filter
 
 def save_diffusion_gif(frames, save_path, filename='diffusion.gif'):
@@ -37,13 +36,13 @@ def save_diffusion_gif(frames, save_path, filename='diffusion.gif'):
     imageio.mimsave(gif_path, images, duration=0.5)  # 可調整 duration
     print(f'GIF saved to {gif_path}')
 
-def plot_side_by_side_comparison(args, x_1, x_t, mse_list, subjects_list):
+def plot_side_by_side_comparison(args, x_1, x_t, subjects_list):
     save_path = args.generation_save_path_result
     for i in range(len(x_1)):
         fig_path = os.path.join(save_path, f'sample_{i}.jpg')
         plt.clf()
         plt.figure(figsize=(12, 6))
-        plt.suptitle(f'{subjects_list[i]} {mse_list[i]:.4f}', fontsize=10)
+        plt.suptitle(f'{subjects_list[i]}', fontsize=10)
 
         # 左圖：ground truth
         ax1 = plt.subplot(1, 2, 1)
@@ -65,7 +64,6 @@ def plot_side_by_side_comparison(args, x_1, x_t, mse_list, subjects_list):
         
 def save_result(root, features, visualization=True):
     # save predict sample
-    os.makedirs(root, exist_ok=True)
     if visualization:
         print(features.keys())
         rear = os.path.join(root, f'rear.gif')
@@ -111,7 +109,6 @@ def infer(args):
     x_1_list = []
     x_t_list = []
     y_list = []
-    mse_list = []
     frames_list = []
     x_infer_list = []
     subjects_list = []
@@ -131,6 +128,11 @@ def infer(args):
 
             x_t, before = model.encoder(x_1)
             x_t_latent_enc = x_t.clone()
+            
+            # 若啟用 fixed_noise，則每次在抽雜訊前都強制重置隨機種子為同一個數值
+            if getattr(args, 'fixed_noise', False):
+                torch.manual_seed(999)
+                
             x_t = torch.randn_like(x_t).float().to(device)
             # 針對擴散步數加上 tqdm (如果是第一個 batch 才顯示，避免畫面太亂，或者也可以全部顯示)
             for j in tqdm(range(step), desc=f"Inference Steps (Batch {batch})", leave=False):
@@ -176,10 +178,6 @@ def infer(args):
                 # 若時間序列短於 window_length 時的保護機制
                 pass
             
-            mse = calculate_mse(np.expand_dims(normalize(x_1), 0), np.expand_dims(normalize(x_t), 0))
-            mse_list.append(mse)
-            # print(f'Batch {batch} MSE: {mse}') 
-            
             x_1_list.append(x_1)
             x_t_list.append(x_t)
             sub_str = subject[0] if isinstance(subject, tuple) else subject
@@ -189,12 +187,14 @@ def infer(args):
             for i, key in enumerate(features.keys()):
                 features[key] = x_t[i].astype(float).tolist()
             save_path = os.path.join(args.generation_save_path_result, f'{sub_str}_{clip_str}')
-            save_result(save_path, features, args.visualization)
+            os.makedirs(save_path, exist_ok=True)
+            # save_result(save_path, features, args.visualization)
             np.save(os.path.join(save_path, f'x_t.npy'), x_t)
             np.save(os.path.join(save_path, f'x_1.npy'), x_1)
+            np.save(os.path.join(save_path, f'embedding.npy'), embedding.detach().cpu().numpy())
             
     if args.visualization:
-        plot_side_by_side_comparison(args, x_1_list, x_t_list, mse_list,  subjects_list)
+        plot_side_by_side_comparison(args, x_1_list, x_t_list,  subjects_list)
         plot_pca_tsne(x_1_list, x_t_list, args.generation_save_path_result)
     return x_1_list
 
@@ -204,20 +204,23 @@ if __name__ == '__main__':
     parser.add_argument('--save_path', type=str, default='./results/denoiser_results', help='Denoiser Model save path')
     
     parser.add_argument('--cfg_scale', type=int, default=3, help='CFG Scale')
-    parser.add_argument('--total_step', type=int, default=500, help='total step sampled from [0,1]')
+    parser.add_argument('--total_step', type=int, default=100, help='total step sampled from [0,1]')
 
     # for inference
     parser.add_argument('--checkpoint_id', type=int, default=2500,help='model id')
     parser.add_argument('--dataset_name', '-d', type=str, choices=['deadlift', 'benchpress'], help='dataset name')
-    parser.add_argument('--run_time', type=int, default=10, help='inference run time')
+    parser.add_argument('--run_time', type=int, default=1, help='inference run time')
     parser.add_argument('--visualization', '-v', type=bool, default=False, help='visualization')
+    parser.add_argument('--fixed_noise', action='store_true', help='Use fixed random noise for all generations to test diversity')
     args = parser.parse_args()
     args.config = os.path.join('.', 'config', args.dataset_name +'.yaml')
     args = get_cfg(args)
     args.pretrainedvae_path = os.path.join('./results/saved_pretrained_models', f'{args.split_base_num}_{args.dataset_name}_epoch{args.pretrained_epc}', 'final_model.pth')
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
     args.checkpoint_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, args.pretrained_epc), 'model_{}.pth'.format(args.checkpoint_id))
-    args.generation_save_path = os.path.join(args.save_path, 'generation', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.cfg_scale, args.total_step))
+    
+    noise_type = "fixed" if getattr(args, 'fixed_noise', False) else "random"
+    args.generation_save_path = os.path.join(args.save_path, f'generation_{noise_type}', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.cfg_scale, args.total_step))
     
     print('pretrained vae path: ', args.pretrainedvae_path)
     print('checkpoint path: ', args.checkpoint_path)

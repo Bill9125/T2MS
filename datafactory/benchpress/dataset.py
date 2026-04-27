@@ -17,6 +17,7 @@ class BenchpressT2SDataset(Dataset):
     """
     def __init__(
         self,
+        feat_name: list,
         json_path: str,
         caption_root: str,
         period: str,
@@ -53,10 +54,9 @@ class BenchpressT2SDataset(Dataset):
                             embedding = data['embedding']
                     
                 # 收集同一個 clip 內所有特徵為 1D 時序 [T]
-                keys = feat_dict.keys()
                 seqs_T = []
                 T_list = []
-                for k in keys:
+                for k in feat_name:
                     x = torch.as_tensor(feat_dict[k], dtype=torch.float32)  # [T] 或 [T, D_f]
                     if x.dim() == 1:
                         seqs_T.append(x)
@@ -66,7 +66,7 @@ class BenchpressT2SDataset(Dataset):
 
                 # 同 clip 內時間長度一致性檢查
                 if len(set(T_list)) != 1:
-                    detail = ", ".join([f"{kk}:{ll}" for kk, ll in zip(keys, T_list)])
+                    detail = ", ".join([f"{kk}:{ll}" for kk, ll in zip(feat_name, T_list)])
                     # print(f"Inconsistent time length (subject={subject}, clip={clip}): {detail}")
                     continue
                 
