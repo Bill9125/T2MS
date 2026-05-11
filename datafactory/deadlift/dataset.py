@@ -23,6 +23,7 @@ class DeadliftT2SDataset(Dataset):
         period: str,
         emb_dim: int = 128,
         data_dim: int = 48,
+        allowed_subjects: list = None,
     ):
         category = ['correct', 'Barbell_colliding_with_the_knees', 'Barbell_moving_away_from_the_shins', 'Hips_rising_before_the_barbell_leaves_the_ground', 'Lower_back_rounding']
         super().__init__()
@@ -34,6 +35,10 @@ class DeadliftT2SDataset(Dataset):
         min_len = float('inf')  # 初始化為無限大
         
         for subject, clips in all_data.items():
+            # 受試者獨立過濾邏輯
+            if allowed_subjects is not None and subject not in allowed_subjects:
+                continue
+                
             for clip, feat_dict in clips.items():
                 caption_path = path.join(caption_root, subject, clip, 'caption.json')
                 if not os.path.exists(caption_path):
@@ -76,21 +81,23 @@ class DeadliftT2SDataset(Dataset):
                     print(f'{subject}', f'{clip}', f'{Tcur}')
                     continue
                 
-                # 在訓練時，依規則對齊到 (48, 96, 192)
+                # 對齊到目標長度 (data_dim)
+                target_T = 0
                 if period == 'train':
-                    Ttar = self._map_target_len(Tcur, data_dim)
-                    if not Ttar:
-                        continue
+                    target_T = self._map_target_len(Tcur, data_dim)
+                elif data_dim > 0:
+                    target_T = data_dim
 
-                    if Ttar != Tcur:
-                        x_1cT = x_nfT.unsqueeze(0)  # [1, n_f, T]
-                        if Tcur > Ttar:
-                            # 下採樣：建議用自適應平均池化以抑制混疊
-                            x_1cT = F.adaptive_avg_pool1d(x_1cT, output_size=Ttar)  # [1, n_f, Ttar]
-                        else:
-                            # 上採樣：線性內插到目標長度
-                            x_1cT = F.interpolate(x_1cT, size=Ttar, mode='linear', align_corners=True)  # [1, n_f, Ttar]
-                        x_nfT = x_1cT.squeeze(0)  # [n_f, Ttar]
+                if target_T > 0:
+                    Ttar = target_T
+                    x_1cT = x_nfT.unsqueeze(0)  # [1, n_f, T]
+                    if Tcur > Ttar:
+                        x_1cT = F.adaptive_avg_pool1d(x_1cT, output_size=Ttar)
+                    elif Tcur < Ttar:
+                        x_1cT = F.interpolate(x_1cT, size=Ttar, mode='linear', align_corners=True)
+                    x_nfT = x_1cT.squeeze(0)
+                elif period == 'train':
+                    continue
 
                 if isinstance(embedding, np.ndarray):
                     embedding = torch.from_numpy(embedding)

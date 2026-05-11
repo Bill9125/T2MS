@@ -68,10 +68,11 @@ mistakes:
         - Throughout the movement, 'bar_x' possesses more than one extremum (local minima and maxima).
         - Throughout the movement, 'left_dist' and 'right_dist' remain flat (the total range < 40).
 
-flow_dim: 128 # embedding dim flow into/in diffusion
+flow_dim: 500 # embedding dim flow into/in diffusion
 dataset:
   split_base_num: 36
   caption: Caption_explain
+  subject_mix: False
 vae:
   block_hidden_size: 128 # hidden size of the blocks in the network
   num_residual_layers: 3 # number of residual layers in the model
@@ -81,3 +82,69 @@ vae:
 diffusion:
   denoiser: DiT
   backbone: flowmatching
+prompt_styles:
+  explain:
+    system_prompt: |
+      You're an expert in multi-feature time series summarization. Generate precise, concise, and context-aware descriptions that reflect the dynamics and relationships among multiple variables. Focus on clarity and informativeness. Avoid unnecessary text or generic explanations.
+    formatted_json: |
+      {
+          "Indicator_Evaluations": [
+              {
+                  "Indicator": "The text of the indicator",
+                  "Description": "A narrative description explaining how this pattern unfolds during the movement.",
+                  "Evidence": "Specific numerical evidence (e.g., time steps t1, t50, t101 and their values) supporting the description.",
+                  "Is_Present": true
+              }
+          ],
+          "Summary": "The final summary explaining the overall movement, which MUST synthesize all confirmed indicators and explicitly cite data evidence for each detected error."
+      }
+    prompt_template: |
+      You are given a set of RAW feature time-series data and a list of HYPOTHETICAL diagnostic indicators.
+      Your task is to act as a strict data validator.
+      Task Guidelines:
+      1. Critically evaluate EACH hypothetical diagnostic indicator against the provided raw time-series data.
+      2. NOT all hypothetical indicators will be present. You MUST be extremely strict. If there is no clear evidence in the data trends, mark it as NOT present.
+      3. Do NOT invent or hallucinate trends. Base your decision ONLY on the numerical data provided.
+      4. For each indicator, fill in 'Description' with a detailed behavioral explanation and 'Evidence' with specific data points. Then output 'Is_Present' as a boolean.
+      5. VERY IMPORTANT: When the input subject contains multiple error labels, you MUST attempt to identify and provide detailed descriptions for at least TWO or more confirmed diagnostic indicators if they are supported by the data.
+      6. The final 'Summary' MUST synthesize all confirmed results into a cohesive movement description, citing the most critical data points from the confirmed indicators.
+
+      Hypothetical Diagnostic Indicators to verify:
+      {indicators_text}
+
+      Given raw time-series data:
+      ```{combined_text}```
+
+      Strictly use the following JSON format:
+      ```{formatted_json}```
+
+  style_new:
+    system_prompt: |
+      You are a strict biomechanics data analyst. Your goal is to summarize movement sequences with extreme mathematical precision to ensure physics-based generative models do not hallucinate out-of-bounds movements.
+    formatted_json: |
+      {
+          "Feature_Highlights": [
+              {
+                  "Feature_Name": "name of the feature",
+                  "Key_Data_Points": "e.g., max value 120 at t=30, min value 40 at t=80",
+                  "Observation": "What happens to this feature over time."
+              }
+          ],
+          "Summary": "A highly precise numerical summary of the overall movement sequence. MUST explicitly cite EXACT numerical bounds (max/min/start/end values)."
+      }
+    prompt_template: |
+      You are given a set of RAW feature time-series data.
+      Your task is to analyze the sequence directly and extract key mathematical properties for each feature.
+
+      Task Guidelines:
+      1. You DO NOT have diagnostic indicators. You must analyze the raw data directly.
+      2. For each feature, identify the absolute numerical bounds (start value, end value, global maximums, global minimums, and significant inflection points) along with their exact timestamps.
+      3. Fill out the 'Feature_Highlights' list for the most important features.
+      4. VERY IMPORTANT: Your final 'Summary' MUST explicitly include the EXACT ABSOLUTE NUMERICAL VALUES of the key features. You must cite these exact coordinate/angle values to ground the description in reality.
+      5. Do NOT invent trends or hallucinate numbers. Base your decision ONLY on the provided arrays.
+
+      Given raw time-series data:
+      ```{combined_text}```
+
+      Strictly use the following JSON format:
+      ```{formatted_json}```

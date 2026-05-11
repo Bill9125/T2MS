@@ -47,6 +47,7 @@ def get_cfg(args):
         args.input_dim = config.get('input_dim', 10)
         args.split_base_num = config['dataset'].get('split_base_num', 36)
         args.caption = config['dataset'].get('caption', 'Caption_explain_no_barbell')
+        args.subject_mix = config['dataset'].get('subject_mix', True)
 
         args.embedding_dim = config['vae'].get('embedding_dim', 64)
         args.block_hidden_size = config['vae'].get('block_hidden_size', 128)

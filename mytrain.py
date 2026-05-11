@@ -28,8 +28,6 @@ def train(args):
 
     pretrained_model = vqvae(args).float().to(args.device)
     pretrained_model.load_state_dict(torch.load(args.pretrained_model_path, map_location=torch.device(args.device)))
-    # pretrained_model = torch.load(args.pretrained_model_path, map_location=torch.device(args.device), weights_only=False)
-    # pretrained_model.float().to(args.device)
     backbone = {'flowmatching': RectifiedFlow(), 'ddpm': DDPM(args.total_step, args.device)}.get(args.backbone)
     if backbone:
         pass
@@ -47,7 +45,7 @@ def train(args):
     scheduler = lr_scheduler.OneCycleLR(optimizer, max_lr=1e-4, total_steps=len(train_loader) * args.epochs)
     loss_list = []
     start_epoch = 0
-    # if from checkpoint:
+    
     if args.checkpoint_path:
         checkpoint = torch.load(args.checkpoint_path, map_location=torch.device(args.device))
         model.load_state_dict(checkpoint['model'])
@@ -66,7 +64,7 @@ def train(args):
                 x_1, before = model.encoder(x_1)  # TS data ==>VAE==> clear TS embedding
 
                 if args.backbone == 'flowmatching':
-                    t = torch.round(torch.rand(x_1.size(0), device=args.device) * args.total_step) / args.total_step
+                    t = torch.round(torch.rand(x_1.size(0)).to(args.device) * args.total_step) / args.total_step
                     x_t, x_0 = backbone.create_flow(x_1, t)  # x_t: dirty TS embedding, x_0：pure noise
                     noise_gt = x_1 - x_0
                 elif args.backbone == 'ddpm':
@@ -77,7 +75,7 @@ def train(args):
                     raise ValueError(f"Unsupported backbone type: {args.backbone}")
 
                 optimizer.zero_grad()
-                decide = torch.rand(1) < 0.7
+                decide = torch.rand(1) < 0.1
                 if decide:
                     y_text_embedding = None
                 pred = model(input=x_t, t=t, text_input=y_text_embedding)
@@ -95,15 +93,13 @@ def train(args):
             save_dict = dict(model=model.state_dict(), optimizer=optimizer.state_dict(), epoch=epoch, loss_list=loss_list)
             torch.save(save_dict, os.path.join(args.save_path, f'model_{epoch}.pth'))
 
-        if epoch == 2500:
-            break
 
 def get_args():
     parser = argparse.ArgumentParser(description="Train T2S model")
     parser.add_argument('--checkpoint_path', type=str, help='checkpoint path')
     parser.add_argument('--dataset_name', '-d', type=str, choices=['deadlift', 'benchpress'], help='dataset name')
     parser.add_argument('--batch_size', type=int, default=512, help='batch_size')
-    parser.add_argument('--epochs', type=int, default=20000, help='training epochs')
+    parser.add_argument('--epochs', type=int, default=2500, help='training epochs')
     parser.add_argument('--save_path', type=str, default='./results/denoiser_results', help='denoiser model save path')
 
     # model specific
@@ -112,11 +108,11 @@ def get_args():
     parser.add_argument('--total_step', type=int, default=100, help='sampling from [0,1]')
     args = parser.parse_args()
     args = get_cfg(args)
-    args.pretrained_model_path = os.path.join('./results/saved_pretrained_models/', f'{args.split_base_num}_{args.dataset_name}_epoch{args.pretrained_epc}', 'final_model.pth')
+    args.pretrained_model_path = os.path.join('./results/saved_pretrained_models/', f'{args.split_base_num}_{args.dataset_name}_epoch{args.pretrained_epc}_{"mix" if args.subject_mix else "isolated"}', 'final_model.pth')
     print('pretrained vae: ', args.pretrained_model_path)
     print('checkpoint path: ', args.checkpoint_path)
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    args.save_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, args.pretrained_epc))
+    args.save_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, args.pretrained_epc, 'mix' if args.subject_mix else 'isolated'))
     args.config = os.path.join('.', 'config', args.dataset_name + '.yaml')
     return args
 

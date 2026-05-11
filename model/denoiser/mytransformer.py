@@ -145,6 +145,8 @@ class Transformer(nn.Module):
             kernel_size=self.patch_size, 
             stride=self.patch_size
         )
+        # text_input 的維度是 flow_dim (也就是這裡傳入的 self.seq_len)，所以 Linear 的輸入必須是 self.seq_len
+        self.text_proj = nn.Linear(self.seq_len, self.embed_dim)
 
         pos_embed = get_sinusoidal_positional_embeddings(self.num_patches, self.embed_dim)
         self.pos_embed = torch.nn.Parameter(pos_embed, requires_grad=False)
@@ -187,7 +189,7 @@ class Transformer(nn.Module):
         # 5. Final output processing
         x = self.ln(x) # [B, Num_Patches, Embed_Dim]
         
-        # 6. Unpatchify (还原)
+        # 6. Unpatchify
         # 投影回原始 Patch 大小: [B, Num_Patches, C * Patch_Size]
         x = self.output_proj(x)
         

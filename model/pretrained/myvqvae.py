@@ -8,7 +8,7 @@ class Residual(nn.Module):
         super().__init__()
         self._block = nn.Sequential(
             nn.ReLU(True),
-            nn.Conv1d(in_channels, num_residual_hiddens, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.Conv1d(in_channels, num_residual_hiddens, kernel_size=3, stride=1, padding=1, padding_mode='replicate', bias=False),
             nn.ReLU(True),
             nn.Conv1d(num_residual_hiddens, num_hiddens, kernel_size=1, stride=1, bias=False),
         )
@@ -34,9 +34,9 @@ class Encoder(nn.Module):
         super().__init__()
         self.flow_dim= flow_dim
         # 下採樣 x4: N -> 50 -> 25
-        self._conv_1 = nn.Conv1d(in_channels, num_hiddens // 2, kernel_size=4, stride=2, padding=1)
-        self._conv_2 = nn.Conv1d(num_hiddens // 2, num_hiddens, kernel_size=4, stride=2, padding=1)
-        self._conv_3 = nn.Conv1d(num_hiddens, num_hiddens, kernel_size=3, stride=1, padding=1)
+        self._conv_1 = nn.Conv1d(in_channels, num_hiddens // 2, kernel_size=4, stride=2, padding=1, padding_mode='replicate')
+        self._conv_2 = nn.Conv1d(num_hiddens // 2, num_hiddens, kernel_size=4, stride=2, padding=1, padding_mode='replicate')
+        self._conv_3 = nn.Conv1d(num_hiddens, num_hiddens, kernel_size=3, stride=1, padding=1, padding_mode='replicate')
 
         self._residual_stack = ResidualStack(
             in_channels=num_hiddens,
@@ -63,7 +63,7 @@ class Encoder(nn.Module):
 class Decoder(nn.Module):
     def __init__(self, in_channels, num_hiddens, num_residual_layers, num_residual_hiddens, out_channels=52):
         super().__init__()
-        self._conv_1 = nn.Conv1d(in_channels, num_hiddens, kernel_size=3, stride=1, padding=1)
+        self._conv_1 = nn.Conv1d(in_channels, num_hiddens, kernel_size=3, stride=1, padding=1, padding_mode='replicate')
         self._residual_stack = ResidualStack(
             in_channels=num_hiddens,
             num_hiddens=num_hiddens,

@@ -25,7 +25,7 @@ def process_clip(client: openai.OpenAI, clip_dir: str) -> None:
     with open(cap_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    text = data.get("Summary_0", "")
+    text = data.get("Summary_0", data.get("Summary", ""))
     
     # 檢查是否有 embedding，或者如果以前殘留的舊 embedding 長度不是 128，就需要重新生成
     existing_emb = data.get("embedding")
@@ -44,8 +44,6 @@ def main(caption_data_path: str) -> None:
     subjects = glob.glob(path.join(caption_data_path, "*"))
     clip_dirs = []
     for subj in subjects:
-        if "correct" in subj:
-            continue
         clip_dirs.extend(glob.glob(path.join(subj, "*")))
 
     # 建立執行緒池並顯示進度
@@ -59,9 +57,8 @@ def main(caption_data_path: str) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--caption_data_path",
-        default="./Data/deadlift/Caption_explain",
-        help="subject 資料夾根路徑")
+    parser.add_argument('--dataset_name', '-d', type=str, choices=['benchpress', 'deadlift'], default='benchpress')
+    parser.add_argument('--prompt_style', type=str, default='explain', help='Prompt style defined in yaml config')
     args = parser.parse_args()
-    main(args.caption_data_path)
+    caption_path = f"./Data/{args.dataset_name}/Caption_{args.prompt_style}"
+    main(caption_path)

@@ -13,28 +13,8 @@ import numpy as np
 import math
 from pretrained_mylavae import plot_pca_tsne
 from tqdm import tqdm
-import json
-from utils import get_cfg, RearV_BenchpressAnimator, TopV_BenchpressAnimator, LateralV_BenchpressAnimator
+from utils import *
 from scipy.signal import savgol_filter
-
-def save_diffusion_gif(frames, save_path, filename='diffusion.gif'):
-    gif_path = os.path.join(save_path, filename)
-    images = []
-    for i, frame in enumerate(frames):
-        fig, ax = plt.subplots()
-        if frame.ndim == 1:
-            ax.plot(frame)
-        else:
-            for j in range(frame.shape[0]):
-                ax.plot(frame[j])
-        ax.set_title(f'Diffusion Step {100*i}')
-        fig.canvas.draw()
-        image = np.frombuffer(fig.canvas.tostring_rgb(), dtype='uint8')
-        image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-        images.append(image)
-        plt.close(fig)
-    imageio.mimsave(gif_path, images, duration=0.5)  # 可調整 duration
-    print(f'GIF saved to {gif_path}')
 
 def plot_side_by_side_comparison(args, x_1, x_t, subjects_list):
     save_path = args.generation_save_path_result
@@ -49,16 +29,13 @@ def plot_side_by_side_comparison(args, x_1, x_t, subjects_list):
         for j in range(len(x_1[i])):
             ax1.plot(x_1[i][j], label=f"{args.features[j]}")
         ax1.set_title('Ground Truth')
-        ax1.legend()
 
         # 右圖：generated
         ax2 = plt.subplot(1, 2, 2)
         for j in range(len(x_t[i])):
             ax2.plot(x_t[i][j], label=f"{args.features[j]}")
         ax2.set_title('Generated')
-        ax2.legend()
 
-        plt.tight_layout()  # 留出 suptitle 空間
         plt.savefig(fig_path)
         plt.close()
         
@@ -73,7 +50,7 @@ def save_result(root, features, visualization=True):
         TopV_BenchpressAnimator(features).animate(top)
         LateralV_BenchpressAnimator(features).animate(lateral)
 
-def infer(args):
+def infer(args, run_id):
     step = args.total_step
     cfg_scale = args.cfg_scale
     device = args.device
@@ -83,11 +60,12 @@ def infer(args):
         from datafactory.deadlift.dataloader import loader_provider
     elif args.dataset_name == 'benchpress':
         from datafactory.benchpress.dataloader import loader_provider
+    
     _, test_loader = loader_provider(args, period='test')
     print('dataset length:', len(test_loader))
     vae = vqvae(args).to(device).float().eval()
-    state = torch.load(args.pretrainedvae_path, map_location=device)  # 多半是 state_dict
-    vae.load_state_dict(state)  # 正確載入
+    state = torch.load(args.pretrainedvae_path, map_location=device)
+    vae.load_state_dict(state)
     pretrained_model = vae
     model = {'DiT': Transformer(args.flow_dim), 'MLP': MLP(), 'myMLP': myMLP(in_channels=args.embedding_dim, cond_dim=args.flow_dim, seq_len=args.flow_dim)}.get(args.denoiser)
     if model:
@@ -113,128 +91,118 @@ def infer(args):
     x_infer_list = []
     subjects_list = []
     with (torch.no_grad()):
-        for batch, data in enumerate(tqdm(test_loader, desc="Generating Batches")):
-            features = {feat : {} for feat in args.features[-args.input_dim:]}
-            # print(f'Generating {batch}th Batch TS...')
-
-            y, x_1, embedding, subject, clip = data
-            y_list.append(y)
-            sub_str = subject[0] if isinstance(subject, tuple) else subject
-            clip_str = clip[0] if isinstance(clip, tuple) else clip
-            y_str = y[0] if isinstance(y, tuple) else y
-            # print(f"[{batch}] Subject/Error: {sub_str} | Clip: {clip_str} | Text: {y_str}")
-            x_1 = x_1.float().to(device)
-            embedding = embedding.float().to(device)
-
-            x_t, before = model.encoder(x_1)
-            x_t_latent_enc = x_t.clone()
+        for batch_idx, batch_data in enumerate(tqdm(test_loader, desc="Generating Batches")):
+            # 支援 custom_collate_fn 回傳的 list 格式
+            if not isinstance(batch_data, list):
+                batch_data = [batch_data]
             
-            # 若啟用 fixed_noise，則每次在抽雜訊前都強制重置隨機種子為同一個數值
-            if getattr(args, 'fixed_noise', False):
-                torch.manual_seed(999)
+            for data in batch_data:
+                features = {feat : {} for feat in args.features[-args.input_dim:]}
+                y, x_1, embedding, subject, clip = data
+                y_list.append(y)
+                sub_str = subject[0] if isinstance(subject, tuple) else subject
+                clip_str = clip[0] if isinstance(clip, tuple) else clip
+                y_str = y[0] if isinstance(y, tuple) else y
                 
-            x_t = torch.randn_like(x_t).float().to(device)
-            # 針對擴散步數加上 tqdm (如果是第一個 batch 才顯示，避免畫面太亂，或者也可以全部顯示)
-            for j in tqdm(range(step), desc=f"Inference Steps (Batch {batch})", leave=False):
-                if args.backbone == 'flowmatching':
-                    t = torch.round(torch.full((x_t.shape[0],), j * 1.0 / step, device=device) * step) / step
-                    pred_uncond = model(input=x_t, t=t, text_input=None)
-                    pred_cond = model(input=x_t, t=t, text_input=embedding)
-                    pred = pred_uncond + cfg_scale * (pred_cond - pred_uncond)
-                    x_t = rf.euler(x_t, pred, 1.0 / step)
-                    
-                elif args.backbone == 'ddpm':
-                    t = torch.full((x_t.size(0),), math.floor(step-1-j), dtype=torch.long, device=device)
-                    pred_uncond = model(input=x_t, t=t, text_input=None)
-                    pred_cond = model(input=x_t, t=t, text_input=embedding)
-                    pred = pred_uncond + cfg_scale * (pred_cond - pred_uncond)
-                    x_t = ddpm.p_sample(x_t, pred, t)
+                x_1 = x_1.float().to(device)
+                embedding = embedding.float().to(device)
 
-                if batch == 0:
-                    x_t_infer_stat, after = pretrained_model.decoder(x_t, length=x_1.shape[-1])
-                    x_t_infer_stat = x_t_infer_stat.detach().cpu().numpy().squeeze()
-                    x_infer_list.append(x_t_infer_stat[0])
+                x_t, before = model.encoder(x_1)
+                x_t_latent_enc = x_t.clone()
+                
+                # 若啟用 fixed_noise，則限制在 10 個固定的「雜訊區間(Seed)」
+                if getattr(args, 'fixed_noise', False):
+                    torch.manual_seed(999 + (run_id % 10))
                     
-                if (j % 100 == 0) or (j == step - 1):
-                    xt_decode, _ = pretrained_model.decoder(x_t, length=x_1.shape[-1])
-                    xt_decode_np = xt_decode.detach().cpu().numpy().squeeze()
-                    frames_list.append(xt_decode_np.copy())
-                x_t_latent_dec = x_t.clone()
-            
-            x_t, after = pretrained_model.decoder(x_t, length=x_1.shape[-1])
-            if batch == 0:
-                x_t_infer_gt, after = pretrained_model.decoder(x_t_latent_enc, length=x_1.shape[-1])
-                x_t_infer_gt = x_t_infer_gt.detach().cpu().numpy().squeeze()
-                x_infer_list.append(x_t_infer_gt[0])
+                x_t = torch.randn_like(x_t).float().to(device)
+                
+                # 針對擴散步數加上 tqdm
+                for j in tqdm(range(step), desc=f"Inference Steps (Batch {batch_idx})", leave=False):
+                    if args.backbone == 'flowmatching':
+                        t = torch.round(torch.full((x_t.shape[0],), j * 1.0 / step, device=device) * step) / step
+                        pred_uncond = model(input=x_t, t=t, text_input=None)
+                        pred_cond = model(input=x_t, t=t, text_input=embedding)
+                        pred = pred_uncond + cfg_scale * (pred_cond - pred_uncond)
+                        x_t = rf.euler(x_t, pred, 1.0 / step)
+                        
+                    elif args.backbone == 'ddpm':
+                        t = torch.full((x_t.size(0),), math.floor(step-1-j), dtype=torch.long, device=device)
+                        pred_uncond = model(input=x_t, t=t, text_input=None)
+                        pred_cond = model(input=x_t, t=t, text_input=embedding)
+                        pred = pred_uncond + cfg_scale * (pred_cond - pred_uncond)
+                        x_t = ddpm.p_sample(x_t, pred, t)
 
-            x_1 = x_1.detach().cpu().numpy().squeeze()
-            x_t = x_t.detach().cpu().numpy().squeeze()
-            
-            # 加上 Savitzky-Golay 濾波器進行後處理平滑
-            # window_length=7, polyorder=2 是消除高頻雜訊但不改變物理軌跡的黃金比例
-            try:
-                x_t = savgol_filter(x_t, window_length=7, polyorder=2, axis=-1)
-            except Exception as e:
-                # 若時間序列短於 window_length 時的保護機制
-                pass
-            
-            x_1_list.append(x_1)
-            x_t_list.append(x_t)
-            sub_str = subject[0] if isinstance(subject, tuple) else subject
-            clip_str = clip[0] if isinstance(clip, tuple) else clip
-            subjects_list.append(f"{sub_str}_{clip_str}")
-            
-            for i, key in enumerate(features.keys()):
-                features[key] = x_t[i].astype(float).tolist()
-            save_path = os.path.join(args.generation_save_path_result, f'{sub_str}_{clip_str}')
-            os.makedirs(save_path, exist_ok=True)
-            # save_result(save_path, features, args.visualization)
-            np.save(os.path.join(save_path, f'x_t.npy'), x_t)
-            np.save(os.path.join(save_path, f'x_1.npy'), x_1)
-            np.save(os.path.join(save_path, f'embedding.npy'), embedding.detach().cpu().numpy())
-            
+                    if batch_idx == 0:
+                        x_t_infer_stat, after = pretrained_model.decoder(x_t, length=x_1.shape[-1])
+                        x_t_infer_stat = x_t_infer_stat.detach().cpu().numpy().squeeze()
+                        x_infer_list.append(x_t_infer_stat[0])
+                        
+                    if (j % 100 == 0) or (j == step - 1):
+                        xt_decode, _ = pretrained_model.decoder(x_t, length=x_1.shape[-1])
+                        xt_decode_np = xt_decode.detach().cpu().numpy().squeeze()
+                        frames_list.append(xt_decode_np.copy())
+                
+                x_t, after = pretrained_model.decoder(x_t, length=x_1.shape[-1])
+                if batch_idx == 0:
+                    x_t_infer_gt, after = pretrained_model.decoder(x_t_latent_enc, length=x_1.shape[-1])
+                    x_t_infer_gt = x_t_infer_gt.detach().cpu().numpy().squeeze()
+                    x_infer_list.append(x_t_infer_gt[0])
+
+                x_1_np = x_1.detach().cpu().numpy().squeeze()
+                x_t_np = x_t.detach().cpu().numpy().squeeze()
+                
+                # 加上 Savitzky-Golay 濾波器
+                try:
+                    x_t_np = savgol_filter(x_t_np, window_length=7, polyorder=2, axis=-1)
+                except Exception as e:
+                    pass
+                
+                x_1_list.append(x_1_np)
+                x_t_list.append(x_t_np)
+                subjects_list.append(f"{sub_str}_{clip_str}")
+                
+                for i, key in enumerate(features.keys()):
+                    features[key] = x_t_np[i].astype(float).tolist()
+                
+                save_path = os.path.join(args.generation_save_path_result, f'{sub_str}_{clip_str}')
+                os.makedirs(save_path, exist_ok=True)
+                if args.visualization:
+                    save_result(save_path, features)
+                np.save(os.path.join(save_path, f'x_t.npy'), x_t_np)
+                np.save(os.path.join(save_path, f'x_1.npy'), x_1_np)
+                np.save(os.path.join(save_path, f'embedding.npy'), embedding.detach().cpu().numpy())
+    
     if args.visualization:
         plot_side_by_side_comparison(args, x_1_list, x_t_list,  subjects_list)
         plot_pca_tsne(x_1_list, x_t_list, args.generation_save_path_result)
-    return x_1_list
+    return x_1_list, x_t_list
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Inference flow matching model")
     parser.add_argument('--batch_size', type=int, default=1, help='batch size')
     parser.add_argument('--save_path', type=str, default='./results/denoiser_results', help='Denoiser Model save path')
     
-    parser.add_argument('--cfg_scale', type=int, default=3, help='CFG Scale')
-    parser.add_argument('--total_step', type=int, default=100, help='total step sampled from [0,1]')
+    parser.add_argument('--cfg_scale', type=int, default=8, help='CFG Scale')
+    parser.add_argument('--total_step', type=int, default=200, help='total step sampled from [0,1]')
 
     # for inference
-    parser.add_argument('--checkpoint_id', type=int, default=2500,help='model id')
+    parser.add_argument('--checkpoint_id', type=int, default=1000,help='model id')
     parser.add_argument('--dataset_name', '-d', type=str, choices=['deadlift', 'benchpress'], help='dataset name')
-    parser.add_argument('--run_time', type=int, default=1, help='inference run time')
-    parser.add_argument('--visualization', '-v', type=bool, default=False, help='visualization')
-    parser.add_argument('--fixed_noise', action='store_true', help='Use fixed random noise for all generations to test diversity')
+    parser.add_argument('--denoiser', type=str, default='DiT', help='denoiser type [DiT, MLP, myMLP]')
+    parser.add_argument('--backbone', type=str, default='flowmatching', help='backbone type [flowmatching, ddpm]')
+    parser.add_argument('--visualization', action='store_true', help='visualization')
+    parser.add_argument('--fixed_noise', action='store_true', help='Evaluate fixed random noise dataset')
+    parser.add_argument('--run_time', type=int, default=1, help='Number of runs')
+
     args = parser.parse_args()
     args.config = os.path.join('.', 'config', args.dataset_name +'.yaml')
     args = get_cfg(args)
-    args.pretrainedvae_path = os.path.join('./results/saved_pretrained_models', f'{args.split_base_num}_{args.dataset_name}_epoch{args.pretrained_epc}', 'final_model.pth')
+    args.pretrainedvae_path = os.path.join('./results/saved_pretrained_models', f'{args.split_base_num}_{args.dataset_name}_epoch{args.pretrained_epc}_{"mix" if args.subject_mix else "isolated"}', 'final_model.pth')
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    args.checkpoint_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, args.pretrained_epc), 'model_{}.pth'.format(args.checkpoint_id))
+    args.checkpoint_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, args.pretrained_epc, 'mix' if args.subject_mix else 'isolated'), 'model_{}.pth'.format(args.checkpoint_id))
     
-    noise_type = "fixed" if getattr(args, 'fixed_noise', False) else "random"
-    args.generation_save_path = os.path.join(args.save_path, f'generation_{noise_type}', '{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.cfg_scale, args.total_step))
-    
-    print('pretrained vae path: ', args.pretrainedvae_path)
-    print('checkpoint path: ', args.checkpoint_path)
-    best_result = {}
     for i in range(args.run_time):
-        args.generation_save_path_result = os.path.join(args.generation_save_path, f'run_{i}')
-        x_1_list = infer(args)
-    
-    # save sample
-    # features = {feat : {} for feat in args.features[-args.input_dim:]}
-    # for batch, x_1 in enumerate(x_1_list):
-    #     for i, key in enumerate(features.keys()):
-    #         features[key] = x_1[i].astype(float).tolist()
-    #     rear = os.path.join(args.generation_save_path_result, f'rear_{batch}.gif')
-    #     top = os.path.join(args.generation_save_path_result, f'top_{batch}.gif')
-        # RearV_BenchpressAnimator(features).animate(rear)
-        # TopV_BenchpressAnimator(features).animate(top)
+        print(f'--- Run {i+1}/{args.run_time} ---')
+        args.generation_save_path_result = os.path.join(args.save_path, f'generation_{"fixed" if args.fixed_noise else "random"}', f'{args.backbone}_{args.denoiser}_{args.dataset_name}_{args.cfg_scale}_{args.total_step}_{"mix" if args.subject_mix else "isolated"}', f'run_{i}')
+        os.makedirs(args.generation_save_path_result, exist_ok=True)
+        x_1_list, x_t_list = infer(args, run_id=i)

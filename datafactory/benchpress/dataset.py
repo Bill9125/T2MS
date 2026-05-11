@@ -23,6 +23,7 @@ class BenchpressT2SDataset(Dataset):
         period: str,
         emb_dim: int = 128,
         data_dim: int = 36,
+        allowed_subjects: list = None,
     ):
         category = ['correct', 'tilting_to_the_right', 'tilting_to_the_left', 'elbows_flaring', 'scapular_protraction']
         super().__init__()
@@ -34,6 +35,10 @@ class BenchpressT2SDataset(Dataset):
         min_len = float('inf')  # 初始化為無限大
         
         for subject, clips in all_data.items():
+            # 受試者獨立過濾邏輯
+            if allowed_subjects is not None and subject not in allowed_subjects:
+                continue
+                
             for clip, feat_dict in clips.items():
                 caption_path = path.join(caption_root, subject, clip, 'caption.json')
                 if not os.path.exists(caption_path):
@@ -79,22 +84,28 @@ class BenchpressT2SDataset(Dataset):
                 # [n_f, T]
                 x_nfT = torch.stack(seqs_T, dim=0)
                 
-                # 在訓練時，依規則對齊到 (36, 72, 144)
+                # 對齊到目標長度 (data_dim)
+                # 如果是訓練模式，會根據原始長度自動分配到 36/72/144
+                # 如果是測試模式且有指定 data_dim，則強制對齊到該長度以利 Batch 堆疊
+                target_T = 0
                 if period == 'train':
-                    Tcur = x_nfT.size(1)
-                    Ttar = self._map_target_len(Tcur, data_dim)
-                    if not Ttar:
-                        continue
+                    target_T = self._map_target_len(x_nfT.size(1), data_dim)
+                elif data_dim > 0:
+                    target_T = data_dim
 
-                    if Ttar != Tcur:
-                        x_1cT = x_nfT.unsqueeze(0)  # [1, n_f, T]
-                        if Tcur > Ttar:
-                            # 下採樣：建議用自適應平均池化以抑制混疊
-                            x_1cT = F.adaptive_avg_pool1d(x_1cT, output_size=Ttar)  # [1, n_f, Ttar]
-                        else:
-                            # 上採樣：線性內插到目標長度
-                            x_1cT = F.interpolate(x_1cT, size=Ttar, mode='linear', align_corners=True)  # [1, n_f, Ttar]
-                        x_nfT = x_1cT.squeeze(0)  # [n_f, Ttar]
+                if target_T > 0:
+                    Tcur = x_nfT.size(1)
+                    Ttar = target_T
+                    
+                    x_1cT = x_nfT.unsqueeze(0)  # [1, n_f, T]
+                    if Tcur > Ttar:
+                        x_1cT = F.adaptive_avg_pool1d(x_1cT, output_size=Ttar)
+                    elif Tcur < Ttar:
+                        x_1cT = F.interpolate(x_1cT, size=Ttar, mode='linear', align_corners=True)
+                    x_nfT = x_1cT.squeeze(0)
+                elif period == 'train':
+                    # 如果是訓練模式但長度不符規則，則跳過該樣本
+                    continue
 
                 if isinstance(embedding, np.ndarray):
                     embedding = torch.from_numpy(embedding)
