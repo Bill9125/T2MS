@@ -48,11 +48,10 @@ mistakes:
     - definition:
         - During the barbell descent, the knee angles reach 80% of their maximum values significantly earlier than the hip angles reach 80% of their maximum values.
 
-flow_dim: 128
+flow_dim: 360
 dataset:
   split_base_num: 48
   caption: Caption_explain
-  subject_mix: true
 vae:
   block_hidden_size: 128 # hidden size of the blocks in the network
   num_residual_layers: 3 # number of residual layers in the model
@@ -88,13 +87,13 @@ prompt_styles:
       4. For each indicator, fill in 'Description' with a detailed behavioral explanation and 'Evidence' with specific data points. Then output 'Is_Present' as a boolean.
       5. VERY IMPORTANT: When the input subject contains multiple error labels, you MUST attempt to identify and provide detailed descriptions for at least TWO or more confirmed diagnostic indicators if they are supported by the data.
       6. The final 'Summary' MUST synthesize all confirmed results into a cohesive movement description, citing the most critical data points from the confirmed indicators.
-      
+
       Hypothetical Diagnostic Indicators to verify:
       {indicators_text}
-      
+
       Given raw time-series data:
       ```{combined_text}```
-      
+
       Strictly use the following JSON format:
       ```{formatted_json}```
 
@@ -115,16 +114,16 @@ prompt_styles:
     prompt_template: |
       You are given a set of RAW feature time-series data.
       Your task is to analyze the sequence directly and extract key mathematical properties for each feature.
-      
+
       Task Guidelines:
       1. You DO NOT have diagnostic indicators. You must analyze the raw data directly.
       2. For each feature, identify the absolute numerical bounds (start value, end value, global maximums, global minimums, and significant inflection points) along with their exact timestamps.
       3. Fill out the 'Feature_Highlights' list for the most important features.
       4. VERY IMPORTANT: Your final 'Summary' MUST explicitly include the EXACT ABSOLUTE NUMERICAL VALUES of the key features. You must cite these exact coordinate/angle values to ground the description in reality.
       5. Do NOT invent trends or hallucinate numbers. Base your decision ONLY on the provided arrays.
-      
+
       Given raw time-series data:
       ```{combined_text}```
-      
+
       Strictly use the following JSON format:
       ```{formatted_json}```

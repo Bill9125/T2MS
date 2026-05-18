@@ -46,8 +46,12 @@ def get_cfg(args):
         args.flow_dim = config.get('flow_dim', 128)
         args.input_dim = config.get('input_dim', 10)
         args.split_base_num = config['dataset'].get('split_base_num', 36)
-        args.caption = config['dataset'].get('caption', 'Caption_explain_no_barbell')
-        args.subject_mix = config['dataset'].get('subject_mix', True)
+        # yaml 中的 caption 是訓練專用的
+        args.train_caption = config['dataset'].get('caption', 'explain')
+        
+        # 若從 argparse 已經傳入 caption (推論用)，就不覆蓋；否則給預設值
+        if not getattr(args, 'caption', None):
+            args.caption = 'explain'
 
         args.embedding_dim = config['vae'].get('embedding_dim', 64)
         args.block_hidden_size = config['vae'].get('block_hidden_size', 128)

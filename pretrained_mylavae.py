@@ -165,6 +165,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_name', '-d', type=str, choices=['deadlift', 'benchpress'], help='dataset name')
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--save_path', type=str, default='results/saved_pretrained_models/', help='denoiser model save path')
+    parser.add_argument('--subject', type=str, default='isolated',choices=['isolated', 'mix'], help='subject type')
     parser.add_argument('--only_inference', type=bool, default=False)
 
     # Model-specific parameters
@@ -173,7 +174,7 @@ if __name__ == '__main__':
     # parser.add_argument('--commitment_cost', type=float, default=0.25, help='commitment cost used in the loss function')
     args = get_cfg(parser.parse_args())
 
-    save_folder_name = '{}_{}_epoch{}_{}'.format(args.split_base_num, args.dataset_name, args.pretrained_epc, 'mix' if args.subject_mix else 'isolated')
+    save_folder_name = '{}_{}_epoch{}_{}'.format(args.split_base_num, args.dataset_name, args.pretrained_epc, args.subject)
     save_dir = os.path.join(args.save_path, save_folder_name)
     os.makedirs(save_dir, exist_ok=True)
 

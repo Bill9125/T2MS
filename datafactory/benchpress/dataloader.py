@@ -58,11 +58,16 @@ def loader_provider(args, period='train'):
     r_train, r_test = (0.7, 0.3)
     gen = torch.Generator().manual_seed(args.general_seed)
     json_path = os.path.join(args.dataset_root, args.dataset_name, 'data.json')
-    caption_root = os.path.join(args.dataset_root, args.dataset_name, args.caption)
+    
+    def get_caption_dir(c):
+        return c if c.startswith('Caption_') else f'Caption_{c}'
+        
+    caption_root_train = os.path.join(args.dataset_root, args.dataset_name, get_caption_dir(args.train_caption))
+    caption_root_test = os.path.join(args.dataset_root, args.dataset_name, get_caption_dir(args.caption))
     
     # --- 2. 決定受試者過濾清單 (僅在 Isolated 模式下需要) ---
     train_subs, test_subs = None, None
-    if not getattr(args, 'subject_mix', False):
+    if args.subject == 'isolated':
         with open(json_path, 'r') as f:
             all_data = json.load(f)
         all_subjects = sorted(list(all_data.keys()))
@@ -79,14 +84,14 @@ def loader_provider(args, period='train'):
         # 在 Subject Mix 模式下，先讀取全部受試者，後面再用 random_split
         curr_train_subs = train_subs if train_subs is not None else None
         
-        ds1 = BenchpressT2SDataset(args.features, json_path, caption_root, 'train', args.flow_dim, args.split_base_num, curr_train_subs)
-        ds2 = BenchpressT2SDataset(args.features, json_path, caption_root, 'train', args.flow_dim, args.split_base_num*2, curr_train_subs)
-        ds3 = BenchpressT2SDataset(args.features, json_path, caption_root, 'train', args.flow_dim, args.split_base_num*4, curr_train_subs)
+        ds1 = BenchpressT2SDataset(args.features, json_path, caption_root_train, 'train', emb_dim=128, data_dim=args.split_base_num, allowed_subjects=curr_train_subs)
+        ds2 = BenchpressT2SDataset(args.features, json_path, caption_root_train, 'train', emb_dim=128, data_dim=args.split_base_num*2, allowed_subjects=curr_train_subs)
+        ds3 = BenchpressT2SDataset(args.features, json_path, caption_root_train, 'train', emb_dim=128, data_dim=args.split_base_num*4, allowed_subjects=curr_train_subs)
         train_ds = AlternatingDataset(ds1, ds2, ds3)
         
         if train_subs is not None:
             # Isolated 模式：Test DS 直接讀取 Test 受試者
-            test_ds = BenchpressT2SDataset(args.features, json_path, caption_root, 'test', args.flow_dim, args.split_base_num*2, test_subs)
+            test_ds = BenchpressT2SDataset(args.features, json_path, caption_root_train, 'test', emb_dim=128, data_dim=args.split_base_num*2, allowed_subjects=test_subs)
         else:
             # Mix 模式：目前 train_ds 包含全部資料，待會進行 random_split
             train_ds, test_ds = random_split(train_ds, [r_train, r_test], generator=gen)
@@ -99,9 +104,13 @@ def loader_provider(args, period='train'):
     elif period == 'test':
         # 測試/推論時期：僅回傳 Test Loader
         curr_test_subs = test_subs if test_subs is not None else None
-        test_ds = BenchpressT2SDataset(args.features, json_path, caption_root, 'test', args.flow_dim, args.split_base_num*2, curr_test_subs)
         
-        if getattr(args, 'subject_mix', False):
+        if args.caption == 'style_new':
+            curr_test_subs = None
+            
+        test_ds = BenchpressT2SDataset(args.features, json_path, caption_root_test, 'test', emb_dim=128, data_dim=args.split_base_num*2, allowed_subjects=curr_test_subs)
+        
+        if args.subject == 'mix' and args.caption != 'style_new':
             # Mix 模式：從全集中切出測試部分
             _, test_ds = random_split(test_ds, [r_train, r_test], generator=gen)
             

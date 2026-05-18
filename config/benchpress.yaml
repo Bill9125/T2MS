@@ -72,7 +72,6 @@ flow_dim: 500 # embedding dim flow into/in diffusion
 dataset:
   split_base_num: 36
   caption: Caption_explain
-  subject_mix: False
 vae:
   block_hidden_size: 128 # hidden size of the blocks in the network
   num_residual_layers: 3 # number of residual layers in the model

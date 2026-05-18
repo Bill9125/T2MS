@@ -100,9 +100,6 @@ def infer(args, run_id):
                 features = {feat : {} for feat in args.features[-args.input_dim:]}
                 y, x_1, embedding, subject, clip = data
                 y_list.append(y)
-                sub_str = subject[0] if isinstance(subject, tuple) else subject
-                clip_str = clip[0] if isinstance(clip, tuple) else clip
-                y_str = y[0] if isinstance(y, tuple) else y
                 
                 x_1 = x_1.float().to(device)
                 embedding = embedding.float().to(device)
@@ -111,10 +108,17 @@ def infer(args, run_id):
                 x_t_latent_enc = x_t.clone()
                 
                 # 若啟用 fixed_noise，則限制在 10 個固定的「雜訊區間(Seed)」
-                if getattr(args, 'fixed_noise', False):
-                    torch.manual_seed(999 + (run_id % 10))
-                    
-                x_t = torch.randn_like(x_t).float().to(device)
+                if getattr(args, 'fixed_noise', True):
+                    x_t = torch.empty(x_t.shape, device=device)
+                    torch.nn.init.trunc_normal_(
+                        x_t,
+                        mean=0.0, 
+                        std=1.0, 
+                        a=2.0,
+                        b=3.0
+                    )
+                else:
+                    x_t = torch.randn_like(x_t).float().to(device)
                 
                 # 針對擴散步數加上 tqdm
                 for j in tqdm(range(step), desc=f"Inference Steps (Batch {batch_idx})", leave=False):
@@ -159,12 +163,12 @@ def infer(args, run_id):
                 
                 x_1_list.append(x_1_np)
                 x_t_list.append(x_t_np)
-                subjects_list.append(f"{sub_str}_{clip_str}")
+                subjects_list.append(f"{subject[0]}_{clip[0]}")
                 
                 for i, key in enumerate(features.keys()):
                     features[key] = x_t_np[i].astype(float).tolist()
                 
-                save_path = os.path.join(args.generation_save_path_result, f'{sub_str}_{clip_str}')
+                save_path = os.path.join(args.generation_save_path_result, f'{subject[0]}_{clip[0]}')
                 os.makedirs(save_path, exist_ok=True)
                 if args.visualization:
                     save_result(save_path, features)
@@ -182,8 +186,10 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=1, help='batch size')
     parser.add_argument('--save_path', type=str, default='./results/denoiser_results', help='Denoiser Model save path')
     
-    parser.add_argument('--cfg_scale', type=int, default=8, help='CFG Scale')
-    parser.add_argument('--total_step', type=int, default=200, help='total step sampled from [0,1]')
+    parser.add_argument('--cfg_scale', type=int, default=3, help='CFG Scale')
+    parser.add_argument('--total_step', type=int, default=100, help='total step sampled from [0,1]')
+    parser.add_argument('--subject', type=str, choices=['isolated','mix'], help='subject type')
+    parser.add_argument('--caption', type=str, choices=['explain','style_new'], help='caption type for inference')
 
     # for inference
     parser.add_argument('--checkpoint_id', type=int, default=1000,help='model id')
@@ -197,12 +203,12 @@ if __name__ == '__main__':
     args = parser.parse_args()
     args.config = os.path.join('.', 'config', args.dataset_name +'.yaml')
     args = get_cfg(args)
-    args.pretrainedvae_path = os.path.join('./results/saved_pretrained_models', f'{args.split_base_num}_{args.dataset_name}_epoch{args.pretrained_epc}_{"mix" if args.subject_mix else "isolated"}', 'final_model.pth')
+    args.pretrainedvae_path = os.path.join('./results/saved_pretrained_models', f'{args.split_base_num}_{args.dataset_name}_epoch{args.pretrained_epc}_{args.subject}', 'final_model.pth')
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    args.checkpoint_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, args.pretrained_epc, 'mix' if args.subject_mix else 'isolated'), 'model_{}.pth'.format(args.checkpoint_id))
+    args.checkpoint_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.train_caption, args.pretrained_epc, args.subject), 'model_{}.pth'.format(args.checkpoint_id))
     
     for i in range(args.run_time):
         print(f'--- Run {i+1}/{args.run_time} ---')
-        args.generation_save_path_result = os.path.join(args.save_path, f'generation_{"fixed" if args.fixed_noise else "random"}', f'{args.backbone}_{args.denoiser}_{args.dataset_name}_{args.cfg_scale}_{args.total_step}_{"mix" if args.subject_mix else "isolated"}', f'run_{i}')
+        args.generation_save_path_result = os.path.join(args.save_path, f'generation_{"fixed" if args.fixed_noise else "random"}', f'{args.backbone}_{args.denoiser}_{args.dataset_name}_{args.cfg_scale}_{args.total_step}_{args.subject}_{args.caption}', f'run_{i}')
         os.makedirs(args.generation_save_path_result, exist_ok=True)
         x_1_list, x_t_list = infer(args, run_id=i)

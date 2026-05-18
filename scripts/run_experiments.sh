@@ -7,15 +7,15 @@
 # 執行前請確保您的環境已經安裝所有相依套件，並設定好資料夾位址。
 # ==============================================================================
 
-DATASET="benchpress"
+DATASET="deadlift"
 
-# # ------------------------------------------------------------------------------
-# # 🧪 實驗一 & 二：超參數二維搜尋 (Grid Search) & 條件生成評估 (C-FID / NND)
-# # 目的：掃描 CFG 與 Step 的組合，並計算每一組資料的 CFID 與 NND 分數，並產出熱力圖
-# # ------------------------------------------------------------------------------
-echo "🚀 啟動實驗一 & 二：超參數掃描與 C-FID/NND 分析"
+# # # ------------------------------------------------------------------------------
+# # # 🧪 實驗一 & 二：超參數二維搜尋 (Grid Search) & 條件生成評估 (C-FID / NND)
+# # # 目的：掃描 CFG 與 Step 的組合，並計算每一組資料的 CFID 與 NND 分數，並產出熱力圖
+# # # ------------------------------------------------------------------------------
+# echo "🚀 啟動實驗一 & 二：超參數掃描與 C-FID/NND 分析"
 
-# 定義要掃描的參數範圍 (依據需求可調整，因為 Drop Rate 降至 10%，CFG 通常在 1~10 之間最佳)
+# # 定義要掃描的參數範圍 (依據需求可調整，因為 Drop Rate 降至 10%，CFG 通常在 1~10 之間最佳)
 for CFG in 1 3 5 7 10; do
     for STEP in 50 100 200; do
         echo "----------------------------------------------------------"
@@ -23,10 +23,10 @@ for CFG in 1 3 5 7 10; do
         echo "----------------------------------------------------------"
         
         # 1. 執行並行/隨機生成 (預設 run_time=10)
-        python myinfer.py -d "$DATASET" --cfg_scale $CFG --total_step $STEP --run_time 10
+        python myinfer.py -d "$DATASET" --cfg_scale $CFG --total_step $STEP --run_time 10 --subject mix --caption explain
         
         # 2. 進行 C-FID 與 NND 的計算 (預設 run_time=10)，會自動把結果合併繪製成 Heatmap
-        python myevaluation.py -d "$DATASET" --cfg_scale $CFG --total_step $STEP --n_folds 5
+        python myevaluation.py -d "$DATASET" --cfg_scale $CFG --total_step $STEP --n_folds 5 --subject mix --method_list CFID, LDS --caption explain
     done
 done
 echo "✅ 實驗一 & 二 完成！ (可至 ./heatmaps/ 檢查結果)"
@@ -52,13 +52,14 @@ echo ""
 # echo "🚀 啟動實驗四： Fixed vs Random Noise 多樣性消融測試"
 # echo "使用最佳參數進行對照：CFG = $BEST_CFG, Step = $BEST_STEP"
 
+# python myinfer.py -d "$DATASET" --cfg_scale $BEST_CFG --total_step $BEST_STEP --subject mix --run_time 20
+
 # # [對照組：Fixed Noise] 鎖死初始隨機種子，沒有自然多樣性，理論上 C-FID 應該會變高。
-# # 為了節省算力，固定雜訊只跑 1 次 (run_time 1) 即可。
 # echo ">> 正在生成 Fixed Noise 實驗組 (run_time=1)..."
-# python myinfer.py -d "$DATASET" --cfg_scale $BEST_CFG --total_step $BEST_STEP --fixed_noise --run_time 10
+# python myinfer.py -d "$DATASET" --cfg_scale $BEST_CFG --total_step $BEST_STEP --subject mix --fixed_noise --run_time 20
 
 # echo ">> 正在計算 Fixed Noise C-FID 分數..."
-# python myevaluation.py -d "$DATASET" --cfg_scale $BEST_CFG --total_step $BEST_STEP --fixed_noise --n_folds 5
+# python myevaluation.py -d "$DATASET" --cfg_scale $BEST_CFG --total_step $BEST_STEP --subject mix --fixed_noise --n_folds 5
 
 # echo ""
 # echo "🎉 所有實驗腳本執行完畢！"

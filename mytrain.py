@@ -99,8 +99,9 @@ def get_args():
     parser.add_argument('--checkpoint_path', type=str, help='checkpoint path')
     parser.add_argument('--dataset_name', '-d', type=str, choices=['deadlift', 'benchpress'], help='dataset name')
     parser.add_argument('--batch_size', type=int, default=512, help='batch_size')
-    parser.add_argument('--epochs', type=int, default=2500, help='training epochs')
+    parser.add_argument('--epochs', type=int, default=2000, help='training epochs')
     parser.add_argument('--save_path', type=str, default='./results/denoiser_results', help='denoiser model save path')
+    parser.add_argument('--subject', type=str, choices=['isolated','mix'], help='subject type')
 
     # model specific
     parser.add_argument('--general_seed', type=int, default=2025, help='seed for random number generation')
@@ -108,11 +109,11 @@ def get_args():
     parser.add_argument('--total_step', type=int, default=100, help='sampling from [0,1]')
     args = parser.parse_args()
     args = get_cfg(args)
-    args.pretrained_model_path = os.path.join('./results/saved_pretrained_models/', f'{args.split_base_num}_{args.dataset_name}_epoch{args.pretrained_epc}_{"mix" if args.subject_mix else "isolated"}', 'final_model.pth')
+    args.pretrained_model_path = os.path.join('./results/saved_pretrained_models/', f'{args.split_base_num}_{args.dataset_name}_epoch{args.pretrained_epc}_{args.subject}', 'final_model.pth')
     print('pretrained vae: ', args.pretrained_model_path)
     print('checkpoint path: ', args.checkpoint_path)
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    args.save_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.caption, args.pretrained_epc, 'mix' if args.subject_mix else 'isolated'))
+    args.save_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.train_caption, args.pretrained_epc, args.subject))
     args.config = os.path.join('.', 'config', args.dataset_name + '.yaml')
     return args
 

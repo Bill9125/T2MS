@@ -52,14 +52,19 @@ def custom_collate_fn(batch):
 
 def loader_provider(args, period='train'):
     # --- 1. 定義切分參數 ---
-    r_train, r_test = (0.9, 0.1)
+    r_train, r_test = (0.7, 0.3)
     gen = torch.Generator().manual_seed(args.general_seed)
     json_path = os.path.join(args.dataset_root, args.dataset_name, 'data.json')
-    caption_root = os.path.join(args.dataset_root, args.dataset_name, args.caption)
+    
+    def get_caption_dir(c):
+        return c if c.startswith('Caption_') else f'Caption_{c}'
+        
+    caption_root_train = os.path.join(args.dataset_root, args.dataset_name, get_caption_dir(args.train_caption))
+    caption_root_test = os.path.join(args.dataset_root, args.dataset_name, get_caption_dir(args.caption))
     
     # --- 2. 決定受試者過濾清單 (僅在 Isolated 模式下需要) ---
     train_subs, test_subs = None, None
-    if not getattr(args, 'subject_mix', False):
+    if args.subject == 'isolated':
         with open(json_path, 'r') as f:
             all_data = json.load(f)
         all_subjects = sorted(list(all_data.keys()))
@@ -73,13 +78,13 @@ def loader_provider(args, period='train'):
     if period == 'train':
         curr_train_subs = train_subs if train_subs is not None else None
         
-        ds1 = DeadliftT2SDataset(args.features, json_path, caption_root, 'train', args.embedding_dim, args.split_base_num, curr_train_subs)
-        ds2 = DeadliftT2SDataset(args.features, json_path, caption_root, 'train', args.embedding_dim, args.split_base_num*2, curr_train_subs)
-        ds3 = DeadliftT2SDataset(args.features, json_path, caption_root, 'train', args.embedding_dim, args.split_base_num*4, curr_train_subs)
+        ds1 = DeadliftT2SDataset(args.features, json_path, caption_root_train, 'train', emb_dim=128, data_dim=args.split_base_num, allowed_subjects=curr_train_subs)
+        ds2 = DeadliftT2SDataset(args.features, json_path, caption_root_train, 'train', emb_dim=128, data_dim=args.split_base_num*2, allowed_subjects=curr_train_subs)
+        ds3 = DeadliftT2SDataset(args.features, json_path, caption_root_train, 'train', emb_dim=128, data_dim=args.split_base_num*4, allowed_subjects=curr_train_subs)
         train_ds = AlternatingDataset(ds1, ds2, ds3)
         
         if train_subs is not None:
-            test_ds = DeadliftT2SDataset(args.features, json_path, caption_root, 'test', args.embedding_dim, args.split_base_num*2, test_subs)
+            test_ds = DeadliftT2SDataset(args.features, json_path, caption_root_train, 'test', emb_dim=128, data_dim=args.split_base_num*2, allowed_subjects=test_subs)
         else:
             train_ds, test_ds = random_split(train_ds, [r_train, r_test], generator=gen)
             
@@ -90,9 +95,13 @@ def loader_provider(args, period='train'):
 
     elif period == 'test':
         curr_test_subs = test_subs if test_subs is not None else None
-        test_ds = DeadliftT2SDataset(args.features, json_path, caption_root, 'test', args.embedding_dim, args.split_base_num*2, curr_test_subs)
         
-        if getattr(args, 'subject_mix', False):
+        if args.caption == 'style_new':
+            curr_test_subs = None
+            
+        test_ds = DeadliftT2SDataset(args.features, json_path, caption_root_test, 'test', emb_dim=128, data_dim=args.split_base_num*2, allowed_subjects=curr_test_subs)
+        
+        if args.subject == 'mix' and args.caption != 'style_new':
             _, test_ds = random_split(test_ds, [r_train, r_test], generator=gen)
             
         test_loader = DataLoader(test_ds, shuffle=False, drop_last=False, batch_size=args.batch_size, collate_fn=custom_collate_fn)
