@@ -56,7 +56,7 @@ mistakes:
         - When 'bar_y' increases 'right_elbow' decreases faster than 'left_elbow' in descent speed.
         - When 'bar_y' decreases 'left_elbow' rises faster than 'right_elbow' in ascent speed.
         - Throughout the beginning and end stages of the movement, 'left_elbow' is larger than 'right_elbow'.
-  3: # 肩膀飛
+  3:
     - name: scapular_protraction
     - definition:
         - The values in the final segment of 'bar_y' are significantly lower than its initial values.

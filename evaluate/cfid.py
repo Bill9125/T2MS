@@ -10,6 +10,11 @@ class CFIDMetric:
         Calculate Conditional FID based on the formula:
         CFID = ||m_y - m_y_hat||^2 + Tr((Cyx - Cy_hat_x)Cxx^-1(Cxy - Cx_y_hat)) + Tr(Cyy|x + Cy_hat_y_hat|x - 2(Cyy|x^1/2 * Cy_hat_y_hat|x * Cyy|x^1/2)^1/2)
         """
+        # L2 Normalization to bound distances in [0, 2] and prevent underflow in high-dimensional space
+        y_real = y_real / (np.linalg.norm(y_real, axis=1, keepdims=True) + 1e-8)
+        y_gen = y_gen / (np.linalg.norm(y_gen, axis=1, keepdims=True) + 1e-8)
+        x_cond = x_cond / (np.linalg.norm(x_cond, axis=1, keepdims=True) + 1e-8)
+
         # 1. Means
         m_y = y_real.mean(axis=0)
         m_y_hat = y_gen.mean(axis=0)

@@ -7,13 +7,13 @@ from model.denoiser.mytransformer import Transformer
 from model.pretrained.myvqvae import vqvae
 from model.backbone.rectified_flow import RectifiedFlow
 from model.backbone.DDPM import DDPM
-import imageio
 import os
 import numpy as np
 import math
 from pretrained_mylavae import plot_pca_tsne
 from tqdm import tqdm
 from utils import *
+# pyrefly: ignore [missing-import]
 from scipy.signal import savgol_filter
 
 def plot_side_by_side_comparison(args, x_1, x_t, subjects_list):

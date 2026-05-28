@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 import seaborn as sns
-from datafactory.benchpress_dataloader import loader_provider
+from datafactory.benchpress.dataloader import loader_provider
 
 def seed_everything(seed_value=42):
     random.seed(seed_value)
