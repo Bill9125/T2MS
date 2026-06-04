@@ -5,8 +5,6 @@ from torch.optim import AdamW, lr_scheduler
 from model.backbone.rectified_flow import RectifiedFlow
 from model.backbone.DDPM import DDPM
 from model.denoiser.mytransformer import Transformer
-from model.denoiser.mlp import MLP
-from model.denoiser.mymlp import myMLP
 from model.pretrained.myvqvae import vqvae
 from tqdm import tqdm
 from utils import get_cfg, plot_loss_curve, seed_everything
@@ -20,12 +18,7 @@ def train(args):
     elif args.dataset_name == 'benchpress':
         from datafactory.benchpress.dataloader import loader_provider
     train_loader, test_loader = loader_provider(args)
-    model = {'DiT': Transformer(args.flow_dim, embedding_dim=args.embedding_dim), 'MLP': MLP(), 'myMLP': myMLP(in_channels=args.embedding_dim, cond_dim=args.flow_dim, seq_len=args.flow_dim)}.get(args.denoiser)
-    if model:
-        model = model.to(args.device)
-    else:
-        raise ValueError(f"No denoiser found")
-
+    model = {'DiT': Transformer(args.flow_dim, embedding_dim=args.embedding_dim)}.get(args.denoiser).to(args.device)
     pretrained_model = vqvae(args).float().to(args.device)
     pretrained_model.load_state_dict(torch.load(args.pretrained_model_path, map_location=torch.device(args.device)))
     backbone = {'flowmatching': RectifiedFlow(), 'ddpm': DDPM(args.total_step, args.device)}.get(args.backbone)
