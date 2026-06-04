@@ -23,7 +23,7 @@ for CFG in 1 3 5 7 10; do
         echo "----------------------------------------------------------"
         
         # 1. 執行並行/隨機生成 (預設 run_time=10)
-        # python myinfer.py -d "$DATASET" --cfg_scale $CFG --total_step $STEP --run_time 10 --subject isolated --caption explain
+        python myinfer.py -d "$DATASET" --cfg_scale $CFG --total_step $STEP --run_time 10 --subject isolated --caption explain
         
         # 2. 進行 C-FID 與 NND 的計算 (預設 run_time=10)，會自動把結果合併繪製成 Heatmap
         python myevaluation.py -d "$DATASET" --cfg_scale $CFG --total_step $STEP --n_folds 5 --subject isolated --method_list C-FID,LDS --caption explain

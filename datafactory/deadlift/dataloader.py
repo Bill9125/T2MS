@@ -99,12 +99,13 @@ def loader_provider(args, period='train'):
         if args.caption == 'style_new':
             curr_test_subs = None
             
-        test_ds = DeadliftT2SDataset(args.features, json_path, caption_root_test, 'test', emb_dim=128, data_dim=args.split_base_num*2, allowed_subjects=curr_test_subs)
+        data_dim_test = 0 if getattr(args, 'batch_size', 1) == 1 else args.split_base_num*2
+        test_ds = DeadliftT2SDataset(args.features, json_path, caption_root_test, 'test', emb_dim=128, data_dim=data_dim_test, allowed_subjects=curr_test_subs)
         
         if args.subject == 'mix' and args.caption != 'style_new':
             _, test_ds = random_split(test_ds, [r_train, r_test], generator=gen)
             
-        test_loader = DataLoader(test_ds, shuffle=False, drop_last=False, batch_size=args.batch_size, collate_fn=custom_collate_fn)
+        test_loader = DataLoader(test_ds, shuffle=False, drop_last=False, batch_size=args.batch_size, collate_fn=custom_collate_fn, num_workers=4)
         return None, test_loader
     else:
         raise ValueError(f"Unknown period: {period}")
