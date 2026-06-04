@@ -108,7 +108,8 @@ def loader_provider(args, period='train'):
         if args.caption == 'style_new':
             curr_test_subs = None
             
-        test_ds = BenchpressT2SDataset(args.features, json_path, caption_root_test, 'test', emb_dim=128, data_dim=args.split_base_num*2, allowed_subjects=curr_test_subs)
+        data_dim_test = 0 if getattr(args, 'batch_size', 1) == 1 else args.split_base_num*2
+        test_ds = BenchpressT2SDataset(args.features, json_path, caption_root_test, 'test', emb_dim=128, data_dim=data_dim_test, allowed_subjects=curr_test_subs)
         
         if args.subject == 'mix' and args.caption != 'style_new':
             # Mix 模式：從全集中切出測試部分

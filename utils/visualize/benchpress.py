@@ -162,7 +162,8 @@ class RearV_BenchpressAnimator():
             blit=True, interval=self.interval
         )
         # 使用 ffmpeg writer
-        self.ani.save(output_file, writer="ffmpeg", fps=self.fps)
+        self.ani.save(output_file, writer="pillow", fps=self.fps)
+        plt.close(self.fig)
         print(f"動畫已輸出完成：{os.path.abspath(output_file)}")
 
 
@@ -348,7 +349,8 @@ class TopV_BenchpressAnimator():
         )
         if output_file:
             # 需要系統已安裝 ffmpeg，Matplotlib 會呼叫對應 writer 輸出 mp4
-            self.ani.save(output_file, writer="ffmpeg", fps=self.fps)
+            self.ani.save(output_file, writer="pillow", fps=self.fps)
+            plt.close(self.fig)
             print(f"動畫已輸出完成：{os.path.abspath(output_file)}")
             
 class LateralV_BenchpressAnimator():
@@ -413,5 +415,6 @@ class LateralV_BenchpressAnimator():
             blit=True, interval=self.interval
         )
         # 使用 ffmpeg writer
-        self.ani.save(output_file, writer="ffmpeg", fps=self.fps)
+        self.ani.save(output_file, writer="pillow", fps=self.fps)
+        plt.close(self.fig)
         print(f"動畫已輸出完成：{os.path.abspath(output_file)}")

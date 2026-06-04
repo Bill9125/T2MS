@@ -81,6 +81,13 @@ vae:
 diffusion:
   denoiser: DiT
   backbone: flowmatching
+clip:
+  clip_dim: 256
+  temperature: 0.07
+  text_backbone: 'all-MiniLM-L6-v2'
+  epoch: 500
+  learning_rate: 1e-4
+  batch_size: 128
 prompt_styles:
   explain:
     system_prompt: |

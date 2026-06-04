@@ -5,16 +5,21 @@ import numpy as np
 import torch
 import yaml
 
-def plot_loss_curve(loss_list, save_path, filename='loss_curve.png'):
+def plot_loss_curve(loss_list, save_path, filename='loss_curve.png', val_loss_list=None):
     if len(loss_list) == 0:
         print("loss_list is empty, skipping plotting.")
         return
     plt.figure(figsize=(10, 6))
-    x = [i for i in range(len(loss_list))]
-    plt.plot(loss_list, label='Training Loss')
+    plt.plot(loss_list, label='Training Loss', color='blue', alpha=0.8)
+    if val_loss_list is not None and len(val_loss_list) > 0:
+        if len(val_loss_list) == len(loss_list):
+            plt.plot(val_loss_list, label='Validation Loss', color='orange', alpha=0.8)
+        else:
+            val_x = np.linspace(0, len(loss_list) - 1, len(val_loss_list))
+            plt.plot(val_x, val_loss_list, label='Validation Loss', color='orange', alpha=0.8)
     plt.xlabel('epochs')
     plt.ylabel('Loss')
-    plt.title('Training Loss Curve')
+    plt.title('Training & Validation Loss Curve')
     plt.legend()
     plt.grid(True)
     os.makedirs(save_path, exist_ok=True)
@@ -22,6 +27,7 @@ def plot_loss_curve(loss_list, save_path, filename='loss_curve.png'):
     plt.savefig(full_path)
     plt.close()
     print(f"Loss curve saved to {full_path}")
+
     
 def seed_everything(seed, cudnn_deterministic=False):
     if seed is not None:
@@ -61,4 +67,13 @@ def get_cfg(args):
         
         args.denoiser = config['diffusion'].get('denoiser', 'DiT')
         args.backbone = config['diffusion'].get('backbone', 'flowmatching')
+        
+        # CLIP config
+        clip_cfg = config.get('clip', {})
+        args.clip_dim = int(clip_cfg.get('clip_dim', 256))
+        args.clip_temperature = float(clip_cfg.get('temperature', 0.07))
+        args.text_backbone = clip_cfg.get('text_backbone', 'all-MiniLM-L6-v2')
+        args.clip_epoch = int(clip_cfg.get('epoch', 500))
+        args.clip_lr = float(clip_cfg.get('learning_rate', 1e-4))
+        args.clip_batch_size = int(clip_cfg.get('batch_size', 128))
     return args

@@ -55,7 +55,7 @@ def infer(args, run_id):
     cfg_scale = args.cfg_scale
     device = args.device
 
-    print(f"Inference config::Step: {step}\t CFG Scale: {cfg_scale}")
+    print(f"Inference config::Step: {step}\t CFG Scale: {cfg_scale}\t use_clip: {args.use_clip}")
     if args.dataset_name == 'deadlift':
         from datafactory.deadlift.dataloader import loader_provider
     elif args.dataset_name == 'benchpress':
@@ -64,7 +64,7 @@ def infer(args, run_id):
     _, test_loader = loader_provider(args, period='test')
     print('dataset length:', len(test_loader))
     vae = vqvae(args).to(device).float().eval()
-    state = torch.load(args.pretrainedvae_path, map_location=device)
+    state = torch.load(args.pretrainedvae_path, map_location=device, weights_only=False)
     vae.load_state_dict(state)
     pretrained_model = vae
     model = {'DiT': Transformer(args.flow_dim), 'MLP': MLP(), 'myMLP': myMLP(in_channels=args.embedding_dim, cond_dim=args.flow_dim, seq_len=args.flow_dim)}.get(args.denoiser)
@@ -72,8 +72,33 @@ def infer(args, run_id):
         model = model.to(args.device)
     else:
         raise ValueError(f"No denoiser found")
+
+    # --- CLIP Text Encoder (if using CLIP mode) ---
+    text_encoder = None
+    if args.use_clip:
+        clip_ckpt = torch.load(args.clip_model_path, map_location=device, weights_only=False)
+        clip_dim = clip_ckpt['clip_dim']
+        text_emb_dim = clip_ckpt.get('text_emb_dim', 128)
+        
+        # Check if text_encoder is present in checkpoint (backward compatibility)
+        if 'text_encoder' in clip_ckpt:
+            from model.pretrained.text_encoder import TextEncoder
+            text_encoder = TextEncoder(input_dim=text_emb_dim, clip_dim=clip_dim).to(device)
+            text_encoder.load_state_dict(clip_ckpt['text_encoder'])
+            for param in text_encoder.parameters():
+                param.requires_grad = False
+            text_encoder.eval()
+            print(f"  CLIP Text Encoder loaded (input_dim={text_emb_dim}, clip_dim={clip_dim})")
+        else:
+            print(f"  CLIP checkpoint does not contain text_encoder. Bypassing and using raw {clip_dim}-dim embeddings directly.")
+
+        # Replace text_proj in denoiser to match clip_dim
+        if hasattr(model, 'text_proj'):
+            embed_dim = model.embed_dim
+            model.text_proj = torch.nn.Linear(clip_dim, embed_dim).to(device)
+
     model.encoder = pretrained_model.encoder
-    model.load_state_dict(torch.load(args.checkpoint_path)['model'])
+    model.load_state_dict(torch.load(args.checkpoint_path, map_location=device, weights_only=False)['model'])
     model.to(device).eval()
     backbone = {'flowmatching': RectifiedFlow(), 'ddpm': DDPM(args.total_step, args.device)}.get(args.backbone)
     if backbone:
@@ -102,7 +127,18 @@ def infer(args, run_id):
                 y_list.append(y)
                 
                 x_1 = x_1.float().to(device)
-                embedding = embedding.float().to(device)
+
+                # --- Text conditioning ---
+                if args.use_clip:
+                    embedding = embedding.float().to(device)
+                    if text_encoder is not None:
+                        # Backward compatibility
+                        text_cond = text_encoder(embedding)   # [B, clip_dim]
+                    else:
+                        text_cond = embedding  # [B, clip_dim]
+                    embedding = model.text_proj(text_cond) # [B, embed_dim]
+                else:
+                    embedding = embedding.float().to(device)
 
                 x_t, before = model.encoder(x_1)
                 x_t_latent_enc = x_t.clone()
@@ -200,15 +236,28 @@ if __name__ == '__main__':
     parser.add_argument('--fixed_noise', action='store_true', help='Evaluate fixed random noise dataset')
     parser.add_argument('--run_time', type=int, default=1, help='Number of runs')
 
+    # CLIP-specific arguments
+    parser.add_argument('--use_clip', action='store_true',
+                        help='Use CLIP-aligned text encoder instead of pre-stored embeddings')
+    parser.add_argument('--clip_model_path', type=str, default=None,
+                        help='Path to Stage 1 CLIP model checkpoint')
+    parser.add_argument('--pretrainedvae_path', type=str, default=None,
+                        help='Path to pretrained VAE (Stage 2 checkpoint)')
+
     args = parser.parse_args()
     args.config = os.path.join('.', 'config', args.dataset_name +'.yaml')
     args = get_cfg(args)
-    args.pretrainedvae_path = os.path.join('./results/saved_pretrained_models', f'{args.split_base_num}_{args.dataset_name}_epoch{args.pretrained_epc}_{args.subject}', 'final_model.pth')
+    if not args.pretrainedvae_path:
+        vae_dir = f'clip_{args.split_base_num}_{args.dataset_name}_epoch{args.pretrained_epc}_{args.subject}' if args.use_clip else f'{args.split_base_num}_{args.dataset_name}_epoch{args.pretrained_epc}_{args.subject}'
+        args.pretrainedvae_path = os.path.join('./results/saved_pretrained_models', vae_dir, 'final_model.pth')
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    args.checkpoint_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}_{}'.format(args.backbone, args.denoiser, args.dataset_name, args.train_caption, args.pretrained_epc, args.subject), 'model_{}.pth'.format(args.checkpoint_id))
+
+    clip_tag = 'clip' if args.use_clip else 'legacy'
+    args.checkpoint_path = os.path.join(args.save_path, 'checkpoints', '{}_{}_{}_{}_{}_{}_{}'.format(
+        args.backbone, args.denoiser, args.dataset_name, args.train_caption, args.pretrained_epc, args.subject, clip_tag), 'model_{}.pth'.format(args.checkpoint_id))
     
     for i in range(args.run_time):
         print(f'--- Run {i+1}/{args.run_time} ---')
-        args.generation_save_path_result = os.path.join(args.save_path, f'generation_{"fixed" if args.fixed_noise else "random"}', f'{args.backbone}_{args.denoiser}_{args.dataset_name}_{args.cfg_scale}_{args.total_step}_{args.subject}_{args.caption}', f'run_{i}')
+        args.generation_save_path_result = os.path.join(args.save_path, f'generation_{"fixed" if args.fixed_noise else "random"}', f'{args.backbone}_{args.denoiser}_{args.dataset_name}_{args.cfg_scale}_{args.total_step}_{args.subject}_{args.caption}_{clip_tag}', f'run_{i}')
         os.makedirs(args.generation_save_path_result, exist_ok=True)
         x_1_list, x_t_list = infer(args, run_id=i)
