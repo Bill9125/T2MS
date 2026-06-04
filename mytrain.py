@@ -54,36 +54,14 @@ def train(args):
         clip_ckpt = torch.load(args.clip_model_path, map_location=args.device, weights_only=False)
         clip_dim = clip_ckpt['clip_dim']
         text_emb_dim = clip_ckpt.get('text_emb_dim', 128)
-
-        # Check if text_encoder is in checkpoint (backward compatibility)
-        if 'text_encoder' in clip_ckpt:
-            from model.pretrained.text_encoder import TextEncoder
-            text_encoder = TextEncoder(input_dim=text_emb_dim, clip_dim=clip_dim).to(args.device)
-            text_encoder.load_state_dict(clip_ckpt['text_encoder'])
-            # Freeze text encoder
-            for param in text_encoder.parameters():
-                param.requires_grad = False
-            text_encoder.eval()
-            print(f"  CLIP Text Encoder loaded (input_dim={text_emb_dim}, clip_dim={clip_dim})")
-        else:
-            print(f"  CLIP checkpoint does not contain text_encoder. Bypassing and using raw {clip_dim}-dim embeddings directly.")
-
-        # Use clip_dim as the conditioning dimension for the denoiser
+        print(f"  Using direct CLIP alignment pipeline (clip_dim={clip_dim}, text_emb_dim={text_emb_dim})")
         cond_dim = clip_dim
     else:
         # Legacy: conditioning dim = flow_dim (pre-stored embedding size matches this via text_proj)
         cond_dim = args.flow_dim
 
     # --- Denoiser ---
-    model = {
-        'DiT': Transformer(args.flow_dim, embedding_dim=args.embedding_dim),
-        'MLP': MLP(),
-        'myMLP': myMLP(in_channels=args.embedding_dim, cond_dim=args.flow_dim, seq_len=args.flow_dim),
-    }.get(args.denoiser)
-    if model:
-        model = model.to(args.device)
-    else:
-        raise ValueError(f"No denoiser found")
+    model = {'DiT': Transformer(args.flow_dim, embedding_dim=args.embedding_dim)}.get(args.denoiser).to(args.device)
 
     # If CLIP mode, replace the text_proj to match clip_dim → embed_dim (128)
     if args.use_clip and hasattr(model, 'text_proj'):
@@ -132,14 +110,8 @@ def train(args):
 
                 # --- Text conditioning ---
                 if args.use_clip:
-                    # Encode/use pre-stored text embedding
-                    y_text_embedding = y_text_embedding.float().to(args.device)
-                    if text_encoder is not None:
-                        with torch.no_grad():
-                            text_cond = text_encoder(y_text_embedding)  # [B, clip_dim]
-                    else:
-                        text_cond = y_text_embedding  # [B, clip_dim]
-                    # Project to denoiser conditioning space
+                    # Directly project pre-stored text embedding to denoiser space
+                    text_cond = y_text_embedding.float().to(args.device)
                     text_cond = model.text_proj(text_cond)  # [B, embed_dim]
                 else:
                     # Legacy: use pre-stored embeddings directly

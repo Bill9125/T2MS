@@ -74,23 +74,11 @@ def infer(args, run_id):
         raise ValueError(f"No denoiser found")
 
     # --- CLIP Text Encoder (if using CLIP mode) ---
-    text_encoder = None
     if args.use_clip:
         clip_ckpt = torch.load(args.clip_model_path, map_location=device, weights_only=False)
         clip_dim = clip_ckpt['clip_dim']
         text_emb_dim = clip_ckpt.get('text_emb_dim', 128)
-        
-        # Check if text_encoder is present in checkpoint (backward compatibility)
-        if 'text_encoder' in clip_ckpt:
-            from model.pretrained.text_encoder import TextEncoder
-            text_encoder = TextEncoder(input_dim=text_emb_dim, clip_dim=clip_dim).to(device)
-            text_encoder.load_state_dict(clip_ckpt['text_encoder'])
-            for param in text_encoder.parameters():
-                param.requires_grad = False
-            text_encoder.eval()
-            print(f"  CLIP Text Encoder loaded (input_dim={text_emb_dim}, clip_dim={clip_dim})")
-        else:
-            print(f"  CLIP checkpoint does not contain text_encoder. Bypassing and using raw {clip_dim}-dim embeddings directly.")
+        print(f"  Using direct CLIP alignment pipeline (clip_dim={clip_dim}, text_emb_dim={text_emb_dim})")
 
         # Replace text_proj in denoiser to match clip_dim
         if hasattr(model, 'text_proj'):
@@ -130,12 +118,7 @@ def infer(args, run_id):
 
                 # --- Text conditioning ---
                 if args.use_clip:
-                    embedding = embedding.float().to(device)
-                    if text_encoder is not None:
-                        # Backward compatibility
-                        text_cond = text_encoder(embedding)   # [B, clip_dim]
-                    else:
-                        text_cond = embedding  # [B, clip_dim]
+                    text_cond = embedding.float().to(device)
                     embedding = model.text_proj(text_cond) # [B, embed_dim]
                 else:
                     embedding = embedding.float().to(device)

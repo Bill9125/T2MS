@@ -25,6 +25,31 @@ from model.pretrained.clip_heads import LAEncoderCLIPHead, clip_loss
 from utils import get_cfg, seed_everything, plot_loss_curve
 
 
+def augment_motion(xs, jitter_std=0.01, scale_range=(0.9, 1.1), mask_prob=0.1):
+    """
+    Apply Time-Series Data Augmentation on GPU/CPU:
+    1. Jittering: Add small Gaussian noise.
+    2. Scaling: Multiply by a random scale factor per batch element.
+    3. Time Masking: Randomly mask out 10% of frames to 0.
+    """
+    B, C, T = xs.shape
+    device = xs.device
+    
+    # 1. Jittering
+    jitter = torch.randn_like(xs) * jitter_std
+    xs = xs + jitter
+    
+    # 2. Scaling
+    scale = torch.empty(B, 1, 1, device=device).uniform_(*scale_range)
+    xs = xs * scale
+    
+    # 3. Time Masking (randomly mask mask_prob% of frames)
+    mask = (torch.rand(B, 1, T, device=device) >= mask_prob).float()
+    xs = xs * mask
+    
+    return xs
+
+
 def train_clip(args):
     print(f"=== Stage 1: CLIP Contrastive Training ===")
     print(f"  dataset:     {args.dataset_name}")
@@ -97,13 +122,29 @@ def train_clip(args):
     total_trainable = sum(p.numel() for p in trainable_params if p.requires_grad)
     print(f"  Total trainable parameters: {total_trainable}")
 
-    optimizer = AdamW(trainable_params, lr=args.clip_lr, weight_decay=1e-4)
+    # Discriminative Learning Rates: Projection head uses args.clip_lr, Encoder uses 20x smaller LR (0.05 * args.clip_lr)
+    if args.freeze_encoder:
+        optimizer_params = [
+            {'params': la_clip_head.parameters(), 'lr': args.clip_lr}
+        ]
+    else:
+        optimizer_params = [
+            {'params': la_clip_head.parameters(), 'lr': args.clip_lr},
+            {'params': la_encoder.parameters(), 'lr': args.clip_lr * 0.05}
+        ]
+    # Increased weight decay to 1e-3 for better regularization
+    optimizer = AdamW(optimizer_params, weight_decay=1e-3)
     scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-6)
 
     # --- Training loop ---
     loss_history = []
     val_loss_history = []
     start_epoch = 0
+
+    best_val_loss = float('inf')
+    patience = 30
+    patience_counter = 0
+    best_epoch = 0
 
     if args.checkpoint_path:
         checkpoint = torch.load(args.checkpoint_path, map_location=args.device, weights_only=False)
@@ -115,6 +156,9 @@ def train_clip(args):
         start_epoch = checkpoint['epoch'] + 1
         loss_history = checkpoint.get('loss_history', [])
         val_loss_history = checkpoint.get('val_loss_history', [])
+        best_val_loss = checkpoint.get('best_val_loss', float('inf'))
+        patience_counter = checkpoint.get('patience_counter', 0)
+        best_epoch = checkpoint.get('best_epoch', start_epoch)
         print(f"  Resumed from epoch {start_epoch}")
 
     la_encoder.train()
@@ -122,6 +166,8 @@ def train_clip(args):
 
     print("Training...")
     for epoch in range(start_epoch, args.epochs):
+        la_encoder.train()
+        la_clip_head.train()
         epoch_losses = []
 
         for batch in tqdm(train_loader, desc=f"Epoch {epoch}/{args.epochs}"):
@@ -139,6 +185,10 @@ def train_clip(args):
 
                 valid_xs = xs[valid_mask]
                 valid_embeddings = embeddings[valid_mask]
+
+                # Apply Motion Augmentation (Jittering, Scaling, Time Masking)
+                if not args.freeze_encoder:
+                    valid_xs = augment_motion(valid_xs)
 
                 # Forward: LA Encoder → CLIP head
                 z, _ = la_encoder(valid_xs)            # [B, embed_dim, flow_dim]
@@ -167,21 +217,52 @@ def train_clip(args):
 
         print(f"[Epoch {epoch}] CLIP loss: {avg_loss:.5f}  val_loss: {val_loss:.5f}  lr: {scheduler.get_last_lr()[0]:.2e}")
 
+        # Early Stopping check
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            patience_counter = 0
+            best_epoch = epoch
+            # Save the best model
+            save_checkpoint(args, epoch, la_encoder, text_emb_dim, la_clip_head,
+                            optimizer, loss_history, val_loss_history=val_loss_history,
+                            best_val_loss=best_val_loss, patience_counter=patience_counter,
+                            best_epoch=best_epoch, filename='best_clip_model.pth')
+            print(f"  [New Best] val_loss improved to {val_loss:.5f}. Saved to best_clip_model.pth")
+        else:
+            patience_counter += 1
+            print(f"  [Early Stopping] No improvement for {patience_counter}/{patience} epochs.")
+
+        if patience_counter >= patience:
+            print(f"Early stopping triggered at epoch {epoch}! Best val_loss: {best_val_loss:.5f} at epoch {best_epoch}")
+            # Load best weights before exiting
+            best_ckpt_path = os.path.join(args.save_path, 'best_clip_model.pth')
+            if os.path.exists(best_ckpt_path):
+                print(f"  Loading best model weights from {best_ckpt_path} for final model.")
+                best_ckpt = torch.load(best_ckpt_path, map_location=args.device, weights_only=False)
+                la_encoder.load_state_dict(best_ckpt['la_encoder'])
+                la_clip_head.load_state_dict(best_ckpt['la_clip_head'])
+            break
+
         # Periodic save
         if epoch % max(1, args.epochs // 10) == 0 or epoch == args.epochs - 1:
             save_checkpoint(args, epoch, la_encoder, text_emb_dim, la_clip_head,
-                            optimizer, loss_history, val_loss_history=val_loss_history)
+                            optimizer, loss_history, val_loss_history=val_loss_history,
+                            best_val_loss=best_val_loss, patience_counter=patience_counter,
+                            best_epoch=best_epoch)
             plot_loss_curve(loss_history, args.save_path, filename='clip_loss_curve.png', val_loss_list=val_loss_history)
 
     # Final save
     save_checkpoint(args, args.epochs - 1, la_encoder, text_emb_dim, la_clip_head,
-                    optimizer, loss_history, val_loss_history=val_loss_history, filename='final_clip_model.pth')
+                    optimizer, loss_history, val_loss_history=val_loss_history,
+                    best_val_loss=best_val_loss, patience_counter=patience_counter,
+                    best_epoch=best_epoch, filename='final_clip_model.pth')
     plot_loss_curve(loss_history, args.save_path, filename='clip_loss_curve.png', val_loss_list=val_loss_history)
     print("Stage 1 (CLIP) training complete.")
 
 
 def save_checkpoint(args, epoch, la_encoder, text_emb_dim, la_clip_head,
-                    optimizer, loss_history, val_loss_history=None, filename=None):
+                    optimizer, loss_history, val_loss_history=None,
+                    best_val_loss=float('inf'), patience_counter=0, best_epoch=0, filename=None):
     if filename is None:
         filename = f'clip_model_epoch_{epoch}.pth'
     save_dict = {
@@ -191,6 +272,9 @@ def save_checkpoint(args, epoch, la_encoder, text_emb_dim, la_clip_head,
         'optimizer': optimizer.state_dict(),
         'loss_history': loss_history,
         'val_loss_history': val_loss_history if val_loss_history is not None else [],
+        'best_val_loss': best_val_loss,
+        'patience_counter': patience_counter,
+        'best_epoch': best_epoch,
         'clip_dim': args.clip_dim,
         'embedding_dim': args.embedding_dim,
         'text_emb_dim': text_emb_dim,
@@ -198,7 +282,6 @@ def save_checkpoint(args, epoch, la_encoder, text_emb_dim, la_clip_head,
     path = os.path.join(args.save_path, filename)
     torch.save(save_dict, path)
     print(f"  Saved checkpoint to {path}")
-
 
 
 @torch.no_grad()
@@ -247,22 +330,14 @@ def get_args():
                         help='checkpoint save path')
     parser.add_argument('--checkpoint_path', type=str, default=None,
                         help='resume from checkpoint')
-    parser.add_argument('--pretrained_vae_path', type=str, default=None,
-                        help='path to pretrained VAE weights to initialize encoder')
+    parser.add_argument('--pretrained_vae_path', type=str, default='none',
+                        help='path to pretrained VAE weights to initialize encoder (default: none)')
     parser.add_argument('--freeze_encoder', action='store_true',
                         help='freeze the VAE encoder and only train projection heads')
 
     args = parser.parse_args()
     args = get_cfg(args)
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
-    # Fallback to default pretrained VAE checkpoint path if not provided
-    if not args.pretrained_vae_path:
-        args.pretrained_vae_path = os.path.join(
-            './results/saved_pretrained_models/',
-            f'{args.split_base_num}_{args.dataset_name}_epoch{args.pretrained_epc}_{args.subject}',
-            'final_model.pth'
-        )
 
     # Use config defaults if not overridden by CLI
     if args.epochs is None:
@@ -272,7 +347,7 @@ def get_args():
 
     args.save_path = os.path.join(
         args.save_path,
-        f'{args.dataset_name}_{args.subject}_dim{args.clip_dim}'
+        f'{args.dataset_name}_{args.subject}'
     )
     return args
 
